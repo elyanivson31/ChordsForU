@@ -1,0 +1,989 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="ChordCapo" />
+  <meta name="theme-color" content="#F2EDE6" />
+  <title>ChordCapo</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+  <style>
+    /* ── Reset & tokens ─────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:           #F2EDE6;
+      --surface:      #FFFFFF;
+      --surface-2:    #FAF8F5;
+      --border:       #E4DDD3;
+      --border-2:     #D0C7BB;
+      --text:         #18140F;
+      --text-2:       #5C5047;
+      --text-3:       #9E8F80;
+      --chord:        #C03A08;
+      --chord-bg:     #FFF4EE;
+      --blue:         #1B4FD8;
+      --blue-hover:   #1740BA;
+      --amber:        #D97706;
+      --amber-light:  #FEF3C7;
+      --green:        #15803D;
+      --red:          #DC2626;
+      --red-bg:       #FEF2F2;
+      --neck-bg:      #1A0F06;
+      --neck-fret:    rgba(210,185,145,.35);
+      --neck-string:  rgba(220,200,160,.45);
+      --shadow-sm:    0 1px 2px rgba(0,0,0,.06), 0 2px 6px rgba(0,0,0,.04);
+      --shadow:       0 2px 8px rgba(0,0,0,.08), 0 6px 20px rgba(0,0,0,.05);
+      --shadow-lg:    0 8px 32px rgba(0,0,0,.10), 0 2px 8px rgba(0,0,0,.06);
+      --r:            14px;
+      --r-sm:         9px;
+      --r-xs:         6px;
+    }
+
+    body {
+      font-family: 'Heebo', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ── Header ─────────────────────────────────────────────────────── */
+    .header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 0 28px;
+      height: 60px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .logo {
+      width: 34px; height: 34px;
+      background: linear-gradient(135deg, #1B4FD8 0%, #2563EB 100%);
+      border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 17px;
+      flex-shrink: 0;
+      box-shadow: 0 2px 8px rgba(27,79,216,.3);
+    }
+
+    .header-text h1 {
+      font-size: 16px; font-weight: 700; letter-spacing: -.01em;
+      color: var(--text); line-height: 1.2;
+    }
+    .header-text p {
+      font-size: 12px; color: var(--text-3); line-height: 1;
+    }
+
+    /* ── Layout ─────────────────────────────────────────────────────── */
+    .container {
+      max-width: 860px;
+      margin: 0 auto;
+      padding: 36px 24px 80px;
+    }
+
+    /* ── Input card ──────────────────────────────────────────────────── */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      box-shadow: var(--shadow);
+    }
+
+    .input-card { padding: 28px; margin-bottom: 24px; }
+
+    .field-label {
+      font-size: 11px; font-weight: 700;
+      text-transform: uppercase; letter-spacing: .09em;
+      color: var(--text-3); margin-bottom: 8px;
+    }
+
+    .url-row { display: flex; gap: 8px; }
+
+    .url-input {
+      flex: 1; height: 46px;
+      padding: 0 14px;
+      border: 1.5px solid var(--border);
+      border-radius: var(--r-sm);
+      font-size: 13.5px; font-family: inherit;
+      background: var(--surface-2);
+      color: var(--text);
+      outline: none;
+      transition: border-color .15s, background .15s;
+    }
+    .url-input::placeholder { color: var(--text-3); }
+    .url-input:focus { border-color: var(--blue); background: var(--surface); }
+
+    .btn {
+      height: 46px; padding: 0 22px;
+      border: none; border-radius: var(--r-sm);
+      font-size: 14px; font-weight: 600; font-family: inherit;
+      cursor: pointer; white-space: nowrap;
+      transition: background .15s, transform .1s, box-shadow .15s;
+    }
+    .btn-primary {
+      background: var(--blue); color: #fff;
+      box-shadow: 0 2px 8px rgba(27,79,216,.25);
+    }
+    .btn-primary:hover { background: var(--blue-hover); box-shadow: 0 4px 12px rgba(27,79,216,.3); }
+    .btn-primary:active { transform: scale(.97); }
+    .btn-primary:disabled { opacity: .5; cursor: not-allowed; transform: none; }
+
+    /* ── Capo section ────────────────────────────────────────────────── */
+    .capo-wrap { margin-top: 24px; }
+
+    .capo-row {
+      display: flex; align-items: baseline;
+      justify-content: space-between; margin-bottom: 12px;
+    }
+
+    .capo-display {
+      display: flex; align-items: baseline; gap: 8px;
+    }
+    .capo-num {
+      font-size: 28px; font-weight: 700; color: var(--text);
+      line-height: 1; min-width: 32px;
+      transition: color .15s;
+    }
+    .capo-num.active { color: var(--amber); }
+    .capo-label {
+      font-size: 13px; color: var(--text-2); font-weight: 500;
+    }
+
+    /* Guitar neck */
+    .neck {
+      background: var(--neck-bg);
+      border-radius: 10px;
+      padding: 10px 14px 10px 0;
+      position: relative;
+      overflow: hidden;
+      box-shadow: inset 0 2px 8px rgba(0,0,0,.4), 0 2px 6px rgba(0,0,0,.2);
+      /* subtle wood grain */
+      background-image:
+        repeating-linear-gradient(
+          180deg,
+          transparent 0px, transparent 3px,
+          rgba(255,255,255,.012) 3px, rgba(255,255,255,.012) 4px
+        );
+    }
+
+    /* Nut */
+    .nut {
+      position: absolute; left: 0; top: 0; bottom: 0;
+      width: 10px;
+      background: linear-gradient(180deg, #F0E4C8, #D4C49A, #F0E4C8);
+      z-index: 3;
+    }
+
+    /* Strings — 6 horizontal lines */
+    .strings {
+      position: absolute; left: 10px; right: 0; top: 0; bottom: 0;
+      display: flex; flex-direction: column;
+      justify-content: space-around;
+      padding: 6px 0;
+      pointer-events: none; z-index: 1;
+    }
+    .string {
+      height: 1px;
+      background: linear-gradient(90deg,
+        transparent, var(--neck-string) 5%, var(--neck-string) 95%, transparent);
+    }
+    .string:nth-child(1), .string:nth-child(6) { opacity: .5; }
+    .string:nth-child(2), .string:nth-child(5) { opacity: .65; }
+    .string:nth-child(3), .string:nth-child(4) { opacity: .8; }
+
+    /* Fret buttons row */
+    .frets {
+      display: flex;
+      margin-left: 10px;
+      gap: 0;
+      position: relative; z-index: 2;
+    }
+
+    .fret-btn {
+      flex: 1; height: 58px;
+      background: transparent;
+      border: none;
+      border-right: 1.5px solid var(--neck-fret);
+      color: rgba(255,255,255,.4);
+      font-size: 12px; font-weight: 600; font-family: inherit;
+      cursor: pointer;
+      display: flex; align-items: flex-end; justify-content: center;
+      padding-bottom: 7px;
+      position: relative;
+      transition: color .15s, background .15s;
+    }
+    .fret-btn:first-child { border-left: none; }
+    .fret-btn:hover { color: rgba(255,255,255,.8); background: rgba(255,255,255,.06); }
+
+    /* Fret dot markers at standard positions */
+    .fret-btn[data-fret="3"]::before,
+    .fret-btn[data-fret="5"]::before,
+    .fret-btn[data-fret="7"]::before,
+    .fret-btn[data-fret="9"]::before {
+      content: '';
+      position: absolute; top: 10px;
+      left: 50%; transform: translateX(-50%);
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: rgba(255,255,255,.15);
+    }
+
+    /* Active fret — the capo bar */
+    .fret-btn.active {
+      background: linear-gradient(180deg, #F59E0B 0%, #D97706 100%);
+      color: #1A0F06;
+      box-shadow:
+        0 0 0 2px rgba(245,158,11,.4),
+        inset 0 1px 0 rgba(255,255,255,.3),
+        0 3px 12px rgba(217,119,6,.5);
+    }
+    .fret-btn.active::before { display: none; }
+
+    /* ── Status bar ──────────────────────────────────────────────────── */
+    .status {
+      display: none;
+      align-items: center; gap: 10px;
+      padding: 11px 14px;
+      border-radius: var(--r-sm);
+      margin-top: 16px;
+      font-size: 13.5px; font-weight: 500;
+      border: 1.5px solid transparent;
+      transition: all .2s;
+    }
+    .status.show { display: flex; }
+    .status.loading { color: var(--blue); background: #EFF6FF; border-color: #BFDBFE; }
+    .status.error { color: var(--red); background: var(--red-bg); border-color: #FECACA; }
+    .status.success { color: var(--green); background: #F0FDF4; border-color: #BBF7D0; }
+
+    .spinner {
+      width: 15px; height: 15px; flex-shrink: 0;
+      border: 2px solid currentColor;
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: spin .55s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Song card ───────────────────────────────────────────────────── */
+    .song-card {
+      display: none;
+      animation: fadeUp .3s ease;
+    }
+    .song-card.show { display: block; }
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(10px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .song-header {
+      padding: 28px 32px 22px;
+      background: var(--surface-2);
+      border-bottom: 1px solid var(--border);
+      border-radius: var(--r) var(--r) 0 0;
+    }
+
+    .song-title {
+      font-size: 26px; font-weight: 700; letter-spacing: -.02em;
+      color: var(--text); line-height: 1.2;
+    }
+    .song-artist {
+      font-size: 15px; color: var(--text-2); margin-top: 5px; font-weight: 400;
+    }
+
+    .pills {
+      display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px;
+    }
+    .pill {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 4px 11px;
+      border-radius: 20px;
+      font-size: 12px; font-weight: 600;
+      border: 1.5px solid;
+    }
+    .pill-default { background: var(--bg); border-color: var(--border-2); color: var(--text-2); }
+    .pill-capo { background: var(--amber-light); border-color: #FCD34D; color: #92400E; }
+    .pill-rtl { background: #F0F9FF; border-color: #BAE6FD; color: #0369A1; }
+
+    /* ── Sheet ───────────────────────────────────────────────────────── */
+    .sheet {
+      padding: 32px;
+      border-radius: 0 0 var(--r) var(--r);
+      background: var(--surface);
+    }
+
+    /* Section labels */
+    .sec-label {
+      display: inline-block;
+      font-size: 10.5px; font-weight: 700;
+      text-transform: uppercase; letter-spacing: .1em;
+      color: var(--text-3);
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 2px 8px;
+      margin: 24px 0 10px;
+    }
+    .sec-label:first-child { margin-top: 0; }
+
+    /* Chord + lyric pair */
+    .pair {
+      margin-bottom: 2px;
+    }
+    .pair + .pair { margin-top: 0; }
+
+    /* Spacing between groups */
+    .group-break { height: 18px; }
+
+    .chord-line {
+      font-family: 'JetBrains Mono', 'Courier New', monospace;
+      font-size: 13px; font-weight: 600;
+      color: var(--chord);
+      white-space: pre;
+      line-height: 1.5;
+      min-height: 1.2em;
+      letter-spacing: .02em;
+    }
+
+    .lyric-line {
+      font-family: 'JetBrains Mono', 'Courier New', monospace;
+      font-size: 14px; font-weight: 400;
+      color: var(--text);
+      white-space: pre;
+      line-height: 1.8;
+      min-height: 1.4em;
+    }
+
+    /* ── RTL (Hebrew) layout ─────────────────────────────────────────── */
+    /* Right-anchor each block while keeping internal LTR chord spacing  */
+    .sheet.rtl {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+    }
+    .sheet.rtl .sec-label {
+      direction: rtl;
+    }
+    .sheet.rtl .group-break {
+      width: 100%;
+    }
+
+    /* ── Cookie panel ───────────────────────────────────────────────── */
+    .adv-toggle {
+      display: flex; align-items: center; gap: 6px;
+      margin-top: 20px;
+      font-size: 12px; font-weight: 600; color: var(--text-3);
+      cursor: pointer; user-select: none;
+      width: fit-content;
+    }
+    .adv-toggle:hover { color: var(--text-2); }
+    .adv-arrow { transition: transform .2s; display: inline-block; }
+    .adv-toggle.open .adv-arrow { transform: rotate(90deg); }
+
+    .adv-panel {
+      display: none; margin-top: 12px;
+      padding: 16px;
+      background: var(--surface-2);
+      border: 1.5px solid var(--border);
+      border-radius: var(--r-sm);
+    }
+    .adv-panel.open { display: block; }
+
+    .adv-hint {
+      font-size: 12px; color: var(--text-2); line-height: 1.6;
+      margin-bottom: 10px;
+    }
+    .adv-hint code {
+      background: var(--bg); border: 1px solid var(--border);
+      border-radius: 3px; padding: 1px 5px;
+      font-family: 'JetBrains Mono', monospace; font-size: 11px;
+    }
+
+    .cookie-input {
+      width: 100%; height: 68px;
+      padding: 8px 10px;
+      border: 1.5px solid var(--border);
+      border-radius: var(--r-xs);
+      font-size: 11px; font-family: 'JetBrains Mono', monospace;
+      background: var(--surface);
+      color: var(--text-2);
+      resize: vertical;
+      outline: none;
+      line-height: 1.5;
+    }
+    .cookie-input:focus { border-color: var(--blue); }
+    .cookie-input::placeholder { color: var(--text-3); }
+
+    .cookie-actions {
+      display: flex; gap: 8px; margin-top: 8px; align-items: center;
+    }
+    .btn-sm {
+      height: 30px; padding: 0 12px;
+      border: 1.5px solid var(--border-2);
+      border-radius: var(--r-xs);
+      font-size: 12px; font-weight: 600; font-family: inherit;
+      background: var(--surface); color: var(--text-2);
+      cursor: pointer; transition: all .15s;
+    }
+    .btn-sm:hover { border-color: var(--blue); color: var(--blue); background: #EFF6FF; }
+    .cookie-saved {
+      font-size: 12px; color: var(--green); font-weight: 500;
+      opacity: 0; transition: opacity .3s;
+    }
+    .cookie-saved.show { opacity: 1; }
+
+    /* ── Song library ───────────────────────────────────────────────── */
+    .library-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      box-shadow: var(--shadow);
+      margin-bottom: 24px;
+      overflow: hidden;
+    }
+
+    .library-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 16px 20px;
+      cursor: pointer;
+      user-select: none;
+      background: var(--surface-2);
+      border-bottom: 1px solid transparent;
+      transition: border-color .15s;
+    }
+    .library-header.open { border-color: var(--border); }
+    .library-header:hover { background: var(--bg); }
+
+    .library-title {
+      display: flex; align-items: center; gap: 10px;
+      font-size: 13px; font-weight: 700;
+      color: var(--text-2); letter-spacing: .04em; text-transform: uppercase;
+    }
+    .library-count {
+      background: var(--blue); color: #fff;
+      font-size: 11px; font-weight: 700;
+      padding: 1px 7px; border-radius: 10px;
+    }
+    .library-arrow { font-size: 11px; color: var(--text-3); transition: transform .2s; }
+    .library-header.open .library-arrow { transform: rotate(90deg); }
+
+    .library-body {
+      display: none; padding: 12px;
+      max-height: 320px; overflow-y: auto;
+    }
+    .library-body.open { display: block; }
+    .library-empty {
+      text-align: center; padding: 24px;
+      font-size: 13px; color: var(--text-3);
+    }
+
+    .song-item {
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 12px;
+      border-radius: var(--r-sm);
+      cursor: pointer;
+      transition: background .12s;
+      border: 1.5px solid transparent;
+    }
+    .song-item:hover { background: var(--surface-2); border-color: var(--border); }
+    .song-item.active { background: #EFF6FF; border-color: #BFDBFE; }
+
+    .song-item-flag { font-size: 16px; flex-shrink: 0; }
+    .song-item-info { flex: 1; min-width: 0; }
+    .song-item-title {
+      font-size: 14px; font-weight: 600; color: var(--text);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .song-item-artist { font-size: 12px; color: var(--text-3); margin-top: 1px; }
+
+    .song-item-del {
+      flex-shrink: 0;
+      width: 26px; height: 26px;
+      border: none; background: none; border-radius: 6px;
+      color: var(--text-3); font-size: 14px;
+      cursor: pointer; display: flex; align-items: center; justify-content: center;
+      opacity: 0; transition: opacity .15s, background .15s, color .15s;
+    }
+    .song-item:hover .song-item-del { opacity: 1; }
+    .song-item-del:hover { background: var(--red-bg); color: var(--red); }
+
+    /* ── Sheet: scroll horizontally so long chord lines don't break layout */
+    .sheet {
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    /* ── Responsive ─────────────────────────────────────────────────── */
+    @media (max-width: 640px) {
+      /* Safe-area padding for notch / home-indicator */
+      .header {
+        padding-left: max(18px, env(safe-area-inset-left));
+        padding-right: max(18px, env(safe-area-inset-right));
+      }
+      .container {
+        padding: 18px 14px max(60px, calc(20px + env(safe-area-inset-bottom)));
+        padding-left:  max(14px, env(safe-area-inset-left));
+        padding-right: max(14px, env(safe-area-inset-right));
+      }
+
+      /* Cards */
+      .input-card { padding: 18px; }
+      .song-header { padding: 18px 18px 16px; }
+      .sheet { padding: 18px; }
+
+      /* URL row: stack on narrow screens */
+      .url-row { flex-direction: column; }
+      .url-input { height: 48px; font-size: 14px; }
+      .btn-primary { width: 100%; height: 48px; font-size: 15px; }
+
+      /* Guitar neck: shorter, slightly larger touch targets */
+      .neck { border-radius: 8px; }
+      .fret-btn { font-size: 12px; height: 52px; }
+
+      /* Song title */
+      .song-title { font-size: 20px; }
+      .song-artist { font-size: 14px; }
+
+      /* Chord + lyric: slightly larger for reading on phone */
+      .chord-line { font-size: 14px; }
+      .lyric-line { font-size: 15px; }
+
+      /* Library */
+      .library-body { max-height: 240px; }
+      .song-item-del { opacity: 1; } /* always visible on touch — no hover */
+
+      /* Cookie panel */
+      .cookie-input { height: 56px; font-size: 10px; }
+
+      /* Capo label text: shorter on mobile */
+      .capo-label { font-size: 12px; }
+      .capo-num { font-size: 24px; }
+    }
+
+    /* Very small phones */
+    @media (max-width: 375px) {
+      .fret-btn { font-size: 11px; }
+      .chord-line { font-size: 13px; }
+      .lyric-line { font-size: 13px; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── Header ────────────────────────────────────────────────────────── -->
+<header class="header">
+  <div class="logo">🎸</div>
+  <div class="header-text">
+    <h1>ChordCapo</h1>
+    <p>Tab4U → transpose for your capo</p>
+  </div>
+</header>
+
+<!-- ── Main ──────────────────────────────────────────────────────────── -->
+<main class="container">
+
+  <!-- Input card -->
+  <div class="card input-card">
+
+    <!-- URL row -->
+    <div class="field-label">Song URL</div>
+    <div class="url-row">
+      <input
+        id="urlInput"
+        class="url-input"
+        type="text"
+        placeholder="https://www.tab4u.com/tabs/songs/…"
+        autocomplete="off" spellcheck="false"
+      />
+      <button id="fetchBtn" class="btn btn-primary" onclick="fetchSong()">Load Song</button>
+    </div>
+
+    <!-- Capo selector -->
+    <div class="capo-wrap">
+      <div class="capo-row">
+        <div class="field-label" style="margin:0">Capo Position</div>
+        <div class="capo-display">
+          <span class="capo-num" id="capoNum">0</span>
+          <span class="capo-label" id="capoLabel">Open / no capo</span>
+        </div>
+      </div>
+
+      <div class="neck">
+        <div class="nut"></div>
+        <div class="strings">
+          <div class="string"></div>
+          <div class="string"></div>
+          <div class="string"></div>
+          <div class="string"></div>
+          <div class="string"></div>
+          <div class="string"></div>
+        </div>
+        <div class="frets" id="frets"></div>
+      </div>
+    </div>
+
+    <!-- Advanced: cookies -->
+    <div class="adv-toggle" id="advToggle" onclick="toggleAdv()">
+      <span class="adv-arrow">▶</span> Browser Cookies
+      <span id="cookieSavedBadge" style="display:none;margin-left:4px;font-size:11px;color:var(--green);font-weight:600;">✓ saved</span>
+    </div>
+    <div class="adv-panel" id="advPanel">
+      <div class="adv-hint">
+        Open the site in Chrome, press <code>F12</code> → Network → reload → click any request →
+        copy the full <code>Cookie:</code> header value and paste below. Saved in your browser.
+      </div>
+
+      <div class="field-label" style="margin-top:4px;margin-bottom:6px">Tab4U Cookies</div>
+      <textarea
+        id="cookieInput"
+        class="cookie-input"
+        placeholder="adT=...; LSize=...; lesInS=...; ..."
+        spellcheck="false"
+      ></textarea>
+
+      <div class="field-label" style="margin-top:12px;margin-bottom:6px">Ultimate Guitar Cookies</div>
+      <textarea
+        id="ugCookieInput"
+        class="cookie-input"
+        placeholder="cf_clearance=...; _ga=...; ..."
+        spellcheck="false"
+      ></textarea>
+
+      <div class="cookie-actions">
+        <button class="btn-sm" onclick="saveCookies()">Save Both</button>
+        <button class="btn-sm" onclick="clearCookies()">Clear All</button>
+        <span class="cookie-saved" id="cookieSavedMsg"></span>
+      </div>
+    </div>
+
+    <!-- Status -->
+    <div class="status" id="status">
+      <div class="spinner" id="spinner"></div>
+      <span id="statusText"></span>
+    </div>
+
+  </div><!-- /input-card -->
+
+  <!-- Library card -->
+  <div class="library-card" id="libraryCard" style="display:none">
+    <div class="library-header" id="libraryHeader" onclick="toggleLibrary()">
+      <div class="library-title">
+        My Songs
+        <span class="library-count" id="libraryCount">0</span>
+      </div>
+      <span class="library-arrow">▶</span>
+    </div>
+    <div class="library-body" id="libraryBody">
+      <div class="library-empty" id="libraryEmpty">No songs saved yet — load a song to add it.</div>
+      <div id="libraryList"></div>
+    </div>
+  </div>
+
+  <!-- Song card -->
+  <div class="card song-card" id="songCard">
+    <div class="song-header">
+      <div class="song-title" id="songTitle"></div>
+      <div class="song-artist" id="songArtist"></div>
+      <div class="pills" id="pills"></div>
+    </div>
+    <div class="sheet" id="sheet"></div>
+  </div>
+
+</main><!-- /container -->
+
+<script>
+// ── State ──────────────────────────────────────────────────────────────
+let song = null;
+let capo = 0;
+
+// ── Transposition ──────────────────────────────────────────────────────
+const CHROMATIC = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+const FLAT_TO_SHARP = { Db:'C#', Eb:'D#', Fb:'E', Gb:'F#', Ab:'G#', Bb:'A#', Cb:'B' };
+// For output: prefer these flat spellings over their sharp enharmonics
+const TO_FLAT = { 'A#':'Bb', 'D#':'Eb', 'G#':'Ab' };
+
+function transposeNote(note, semitones) {
+  const sharp = FLAT_TO_SHARP[note] || note;
+  const idx = CHROMATIC.indexOf(sharp);
+  if (idx === -1) return note;
+  const result = CHROMATIC[((idx + semitones) % 12 + 12) % 12];
+  return TO_FLAT[result] || result;
+}
+
+function transposeChordLine(line, semitones) {
+  if (semitones === 0) return line;
+  // Replace every note token (uppercase A-G + optional accidental)
+  // Chord quality chars are all lowercase so this won't over-match
+  return line.replace(/[A-G][#b]?/g, n => transposeNote(n, semitones));
+}
+
+// ── Fret selector ──────────────────────────────────────────────────────
+function buildNeck() {
+  const wrap = document.getElementById('frets');
+  for (let i = 0; i <= 9; i++) {
+    const btn = document.createElement('button');
+    btn.className = 'fret-btn' + (i === 0 ? ' active' : '');
+    btn.dataset.fret = i;
+    btn.textContent = i;
+    btn.title = i === 0 ? 'No capo (open)' : `Capo fret ${i}`;
+    btn.addEventListener('click', () => setCapo(i));
+    wrap.appendChild(btn);
+  }
+}
+
+function setCapo(n) {
+  capo = n;
+  document.getElementById('capoNum').textContent = n;
+  document.getElementById('capoNum').classList.toggle('active', n > 0);
+  document.getElementById('capoLabel').textContent =
+    n === 0 ? 'Open / no capo' : `Fret ${n} — chords sound ${n} semitone${n > 1 ? 's' : ''} higher`;
+  document.querySelectorAll('.fret-btn').forEach(b =>
+    b.classList.toggle('active', +b.dataset.fret === n)
+  );
+  if (song) renderSheet();
+}
+
+// ── Cookies ────────────────────────────────────────────────────────────
+function isUGUrl(url) { return /ultimate-guitar\.com/i.test(url); }
+
+function getCookies(url) {
+  const key = isUGUrl(url) ? 'ug_cookies' : 'tab4u_cookies';
+  return localStorage.getItem(key) || '';
+}
+
+function saveCookies() {
+  const tab4u = document.getElementById('cookieInput').value.trim();
+  const ug    = document.getElementById('ugCookieInput').value.trim();
+  if (tab4u) localStorage.setItem('tab4u_cookies', tab4u);
+  if (ug)    localStorage.setItem('ug_cookies', ug);
+  const badge = document.getElementById('cookieSavedBadge');
+  badge.style.display = (tab4u || ug) ? '' : 'none';
+  const msg = document.getElementById('cookieSavedMsg');
+  msg.textContent = '✓ Saved!';
+  msg.classList.add('show');
+  setTimeout(() => msg.classList.remove('show'), 2500);
+}
+
+function clearCookies() {
+  localStorage.removeItem('tab4u_cookies');
+  localStorage.removeItem('ug_cookies');
+  document.getElementById('cookieInput').value = '';
+  document.getElementById('ugCookieInput').value = '';
+  document.getElementById('cookieSavedBadge').style.display = 'none';
+}
+
+function toggleAdv() {
+  const t = document.getElementById('advToggle');
+  const p = document.getElementById('advPanel');
+  t.classList.toggle('open');
+  p.classList.toggle('open');
+}
+
+// ── Fetch ──────────────────────────────────────────────────────────────
+async function fetchSong() {
+  const url = document.getElementById('urlInput').value.trim();
+  if (!url) {
+    showStatus('error', 'Please enter a Tab4U song URL.');
+    return;
+  }
+
+  showStatus('loading', 'Fetching song…');
+  document.getElementById('fetchBtn').disabled = true;
+  document.getElementById('songCard').classList.remove('show');
+
+  try {
+    const cookies = getCookies(url);
+    const qs = '/api/song?url=' + encodeURIComponent(url) +
+               (cookies ? '&cookies=' + encodeURIComponent(cookies) : '');
+    const res = await fetch(qs);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Something went wrong');
+
+    song = data;
+    if (data.originalCapo > 0) setCapo(data.originalCapo);
+    const fromCache = !data.savedAt ? '' : library.some(s => s.url === data.url) ? ' (from library)' : ' — saved to library';
+    showStatus('success', `Loaded "${data.title}"${fromCache}`);
+    renderSong();
+    await loadLibrary();
+  } catch (err) {
+    showStatus('error', err.message);
+  } finally {
+    document.getElementById('fetchBtn').disabled = false;
+  }
+}
+
+function showStatus(type, text) {
+  const el = document.getElementById('status');
+  const sp = document.getElementById('spinner');
+  el.className = 'status show ' + type;
+  sp.style.display = type === 'loading' ? '' : 'none';
+  document.getElementById('statusText').textContent = text;
+}
+
+// ── Render ─────────────────────────────────────────────────────────────
+function renderSong() {
+  const { title, artist, isHebrew } = song;
+
+  // Header
+  const titleEl = document.getElementById('songTitle');
+  const artistEl = document.getElementById('songArtist');
+  titleEl.textContent = title;
+  artistEl.textContent = artist || '';
+  titleEl.style.direction = isHebrew ? 'rtl' : 'ltr';
+  artistEl.style.direction = isHebrew ? 'rtl' : 'ltr';
+
+  document.getElementById('songCard').classList.add('show');
+  renderSheet();
+}
+
+function renderSheet() {
+  const { sections, isHebrew } = song;
+
+  // Pills
+  const origCapo = song.originalCapo || 0;
+  document.getElementById('pills').innerHTML = [
+    `<span class="pill ${isHebrew ? 'pill-rtl' : 'pill-default'}">
+       ${isHebrew ? '🇮🇱 Hebrew · RTL' : '🇬🇧 English · LTR'}
+     </span>`,
+    origCapo > 0
+      ? `<span class="pill pill-capo">📌 Song capo: fret ${origCapo}</span>`
+      : '',
+    capo > 0
+      ? `<span class="pill pill-capo">🎸 Your capo: fret ${capo}</span>`
+      : '',
+  ].join('');
+
+  const dir = isHebrew ? 'rtl' : 'ltr';
+  const align = isHebrew ? 'right' : 'left';
+
+  const chunks = [];
+  let prevWasLabel = false;
+
+  for (const sec of sections) {
+    if (sec.type === 'label') {
+      // Group break before label (unless first)
+      if (chunks.length > 0 && !prevWasLabel) chunks.push('<div class="group-break"></div>');
+      chunks.push(
+        `<div class="sec-label" style="direction:${dir}">${esc(sec.text)}</div>`
+      );
+      prevWasLabel = true;
+    } else {
+      const chords = transposeChordLine(sec.chord, -capo);
+      chunks.push(
+        `<div class="pair">` +
+          `<div class="chord-line">${esc(chords)}</div>` +
+          (sec.lyric
+            ? `<div class="lyric-line">${esc(sec.lyric)}</div>`
+            : '') +
+        `</div>`
+      );
+      prevWasLabel = false;
+    }
+  }
+
+  const sheet = document.getElementById('sheet');
+  sheet.className = 'sheet' + (isHebrew ? ' rtl' : '');
+  sheet.removeAttribute('style');
+  sheet.innerHTML = chunks.join('');
+}
+
+function esc(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ── Keyboard ───────────────────────────────────────────────────────────
+document.getElementById('urlInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') fetchSong();
+});
+
+// ── Library ────────────────────────────────────────────────────────────
+let library = [];
+
+async function loadLibrary() {
+  try {
+    const res = await fetch('/api/songs');
+    library = await res.json();
+    renderLibrary();
+  } catch { /* server may not be ready yet */ }
+}
+
+function renderLibrary() {
+  const card  = document.getElementById('libraryCard');
+  const count = document.getElementById('libraryCount');
+  const list  = document.getElementById('libraryList');
+  const empty = document.getElementById('libraryEmpty');
+
+  count.textContent = library.length;
+  card.style.display = library.length > 0 ? '' : 'none';
+  empty.style.display = library.length === 0 ? '' : 'none';
+
+  list.innerHTML = library.map(s => {
+    const flag    = s.isHebrew ? '🇮🇱' : '🎵';
+    const isActive = song && song.url === s.url;
+    return `
+      <div class="song-item ${isActive ? 'active' : ''}" onclick="loadFromLibrary('${esc(s.url)}')">
+        <span class="song-item-flag">${flag}</span>
+        <div class="song-item-info">
+          <div class="song-item-title">${esc(s.title)}</div>
+          <div class="song-item-artist">${esc(s.artist || '')}</div>
+        </div>
+        <button class="song-item-del" title="Remove" onclick="deleteSong(event,'${esc(s.url)}')">✕</button>
+      </div>`;
+  }).join('');
+}
+
+function toggleLibrary() {
+  const header = document.getElementById('libraryHeader');
+  const body   = document.getElementById('libraryBody');
+  header.classList.toggle('open');
+  body.classList.toggle('open');
+}
+
+async function loadFromLibrary(url) {
+  showStatus('loading', 'Loading from library…');
+  document.getElementById('urlInput').value = url;
+  try {
+    const res  = await fetch('/api/song?url=' + encodeURIComponent(url));
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed');
+    song = data;
+    if (data.originalCapo > 0) setCapo(data.originalCapo);
+    showStatus('success', `Loaded "${data.title}" from library`);
+    renderSong();
+    renderLibrary(); // refresh active state
+  } catch (err) {
+    showStatus('error', err.message);
+  }
+}
+
+async function deleteSong(e, url) {
+  e.stopPropagation();
+  await fetch('/api/songs?url=' + encodeURIComponent(url), { method: 'DELETE' });
+  library = library.filter(s => s.url !== url);
+  if (song && song.url === url) {
+    song = null;
+    document.getElementById('songCard').classList.remove('show');
+  }
+  renderLibrary();
+}
+
+// ── Init ───────────────────────────────────────────────────────────────
+buildNeck();
+loadLibrary();
+const _saved   = localStorage.getItem('tab4u_cookies') || '';
+const _savedUG = localStorage.getItem('ug_cookies') || '';
+if (_saved)   document.getElementById('cookieInput').value = _saved;
+if (_savedUG) document.getElementById('ugCookieInput').value = _savedUG;
+if (_saved || _savedUG) document.getElementById('cookieSavedBadge').style.display = '';
+</script>
+</body>
+</html>
