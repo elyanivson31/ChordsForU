@@ -4,17 +4,17 @@ const http = require('http');
 const path = require('path');
 const fs = require('fs');
 const { URL } = require('url');
-const puppeteer = require('puppeteer-core');
+const puppeteer = require('puppeteer');
 
 const CHROME_PATHS = [
+  process.env.CHROME_PATH,
   'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
   'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
-  process.env.CHROME_PATH,
 ].filter(Boolean);
 
 function findChrome() {
   for (const p of CHROME_PATHS) if (fs.existsSync(p)) return p;
-  throw new Error('Chrome not found. Set CHROME_PATH env var to your chrome.exe location.');
+  return undefined; // fall back to puppeteer's bundled Chromium
 }
 
 const app = express();
@@ -123,8 +123,9 @@ app.delete('/api/songs', (req, res) => {
 
 // ─── Puppeteer fetch (for Cloudflare-protected sites) ─────────────────
 async function fetchUGWithPuppeteer(targetUrl, cookies = '') {
+  const executablePath = findChrome();
   const browser = await puppeteer.launch({
-    executablePath: findChrome(),
+    ...(executablePath ? { executablePath } : {}),
     headless: true,
     args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-blink-features=AutomationControlled'],
   });
