@@ -8,6 +8,7 @@ const puppeteer = require('puppeteer');
 const session = require('express-session');
 const bcrypt = require('bcryptjs');
 const { v4: uuidv4 } = require('uuid');
+const db = require('./db');
 
 const CHROME_PATHS = [
   process.env.CHROME_PATH,
@@ -22,75 +23,19 @@ function findChrome() {
 
 const app = express();
 const PORT = process.env.PORT || 3334;
-const DATA_DIR = path.join(__dirname, 'data');
 
-// ─── Data directory setup ────────────────────────────────────────────────
-if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-
-const USERS_FILE    = path.join(DATA_DIR, 'users.json');
-const SETTINGS_FILE = path.join(DATA_DIR, 'settings.json');
-
-// ─── Users ───────────────────────────────────────────────────────────────
-function loadUsers() {
-  try {
-    if (fs.existsSync(USERS_FILE)) return JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
-  } catch {}
-  return [];
-}
-
-function saveUsers(users) {
-  fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2), 'utf8');
-}
-
+// ─── Default admin setup ─────────────────────────────────────────────────
 function initDefaultAdmin() {
-  let users = loadUsers();
-  if (users.length > 0) return;
+  if (db.countAdmins() > 0) return;
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
   let password = '';
   for (let i = 0; i < 10; i++) password += chars[Math.floor(Math.random() * chars.length)];
   const passwordHash = bcrypt.hashSync(password, 10);
-  const admin = { id: uuidv4(), username: 'admin', passwordHash, isAdmin: true, createdAt: new Date().toISOString() };
-  users = [admin];
-  saveUsers(users);
-  console.log('\n  ┌─────────────────────────────────────────┐');
-  console.log('  │   DEFAULT ADMIN CREDENTIALS             │');
-  console.log('  │   Username: admin                       │');
-  console.log(`  │   Password: ${password}          │`);
-  console.log('  └─────────────────────────────────────────┘\n');
+  db.createUser(uuidv4(), 'admin', passwordHash, true);
+  return password;
 }
 
-initDefaultAdmin();
-
-// ─── Settings ────────────────────────────────────────────────────────────
-function loadSettings() {
-  try {
-    if (fs.existsSync(SETTINGS_FILE)) return JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8'));
-  } catch {}
-  return { tab4uCookies: '', ugCookies: '' };
-}
-
-function saveSettings(settings) {
-  fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2), 'utf8');
-}
-
-if (!fs.existsSync(SETTINGS_FILE)) saveSettings({ tab4uCookies: '', ugCookies: '' });
-
-// ─── Per-user song store ──────────────────────────────────────────────────
-function songsFile(userId) {
-  return path.join(DATA_DIR, `songs_${userId}.json`);
-}
-
-function loadUserSongs(userId) {
-  try {
-    const f = songsFile(userId);
-    if (fs.existsSync(f)) return JSON.parse(fs.readFileSync(f, 'utf8'));
-  } catch {}
-  return {};
-}
-
-function saveUserSongs(userId, store) {
-  fs.writeFileSync(songsFile(userId), JSON.stringify(store, null, 2), 'utf8');
-}
+const newAdminPassword = initDefaultAdmin();
 
 // ─── Middleware ───────────────────────────────────────────────────────────
 app.use(express.json());
@@ -117,13 +62,12 @@ function requireAdmin(req, res, next) {
 app.post('/api/auth/login', (req, res) => {
   const { username, password } = req.body || {};
   if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
-  const users = loadUsers();
-  const user = users.find(u => u.username === username);
-  if (!user || !bcrypt.compareSync(password, user.passwordHash))
+  const user = db.getUser(username);
+  if (!user || !bcrypt.compareSync(password, user.password_hash))
     return res.status(401).json({ error: 'Invalid username or password' });
   req.session.userId  = user.id;
-  req.session.isAdmin = user.isAdmin;
-  res.json({ id: user.id, username: user.username, isAdmin: user.isAdmin });
+  req.session.isAdmin = !!user.is_admin;
+  res.json({ id: user.id, username: user.username, isAdmin: !!user.is_admin });
 });
 
 app.post('/api/auth/logout', (req, res) => {
@@ -132,20 +76,14 @@ app.post('/api/auth/logout', (req, res) => {
 
 app.get('/api/auth/me', (req, res) => {
   if (!req.session.userId) return res.status(401).json({ error: 'Not authenticated' });
-  const users = loadUsers();
-  const user = users.find(u => u.id === req.session.userId);
+  const user = db.getUserById(req.session.userId);
   if (!user) return res.status(401).json({ error: 'User not found' });
-  res.json({ id: user.id, username: user.username, isAdmin: user.isAdmin });
+  res.json({ id: user.id, username: user.username, isAdmin: !!user.is_admin });
 });
 
 // ─── Song routes ──────────────────────────────────────────────────────────
 app.get('/api/songs', requireAuth, (req, res) => {
-  const store = loadUserSongs(req.session.userId);
-  const list = Object.values(store).map(({ url, title, artist, isHebrew, savedAt }) =>
-    ({ url, title, artist, isHebrew, savedAt })
-  );
-  list.sort((a, b) => new Date(b.savedAt) - new Date(a.savedAt));
-  res.json(list);
+  res.json(db.getUserSongs(req.session.userId));
 });
 
 app.get('/api/song', requireAuth, (req, res) => {
@@ -153,12 +91,12 @@ app.get('/api/song', requireAuth, (req, res) => {
   if (!rawUrl) return res.status(400).json({ error: 'URL parameter is required' });
 
   const key = normalizeUrl(rawUrl);
-  const store = loadUserSongs(req.session.userId);
+  const cached = db.getSong(req.session.userId, key);
+  if (cached) return res.json(cached);
 
-  if (store[key]) return res.json(store[key]);
-
-  const settings = loadSettings();
-  const cookies = isUGUrl(rawUrl) ? (settings.ugCookies || '') : (settings.tab4uCookies || '');
+  const tab4uCookies = db.getSetting('tab4u_cookies');
+  const ugCookies    = db.getSetting('ug_cookies');
+  const cookies = isUGUrl(rawUrl) ? (ugCookies || '') : (tab4uCookies || '');
 
   const fetcher = isUGUrl(rawUrl)
     ? fetchUGWithPuppeteer(rawUrl, cookies)
@@ -167,18 +105,16 @@ app.get('/api/song', requireAuth, (req, res) => {
   fetcher
     .then(result => {
       const song = isUGUrl(rawUrl) ? parseUGData(result.data) : parseSong(result);
-      store[key] = { ...song, url: key, savedAt: new Date().toISOString() };
-      saveUserSongs(req.session.userId, store);
-      res.json(store[key]);
+      const songObj = { ...song, url: key, savedAt: new Date().toISOString() };
+      db.saveSong(req.session.userId, key, songObj);
+      res.json(songObj);
     })
     .catch(err => res.status(500).json({ error: err.message }));
 });
 
 app.delete('/api/songs', requireAuth, (req, res) => {
   const key = normalizeUrl(req.query.url);
-  const store = loadUserSongs(req.session.userId);
-  delete store[key];
-  saveUserSongs(req.session.userId, store);
+  db.deleteSong(req.session.userId, key);
   res.json({ ok: true });
 });
 
@@ -186,8 +122,9 @@ app.delete('/api/songs', requireAuth, (req, res) => {
 app.get('/api/debug', requireAuth, (req, res) => {
   const rawUrl  = req.query.url;
   if (!rawUrl) return res.status(400).json({ error: 'url required' });
-  const settings = loadSettings();
-  const cookies = isUGUrl(rawUrl) ? (settings.ugCookies || '') : (settings.tab4uCookies || '');
+  const tab4uCookies = db.getSetting('tab4u_cookies');
+  const ugCookies    = db.getSetting('ug_cookies');
+  const cookies = isUGUrl(rawUrl) ? (ugCookies || '') : (tab4uCookies || '');
   const fetcher = isUGUrl(rawUrl) ? fetchUGWithPuppeteer(rawUrl, cookies) : fetchUrl(rawUrl, cookies);
   fetcher
     .then(result => {
@@ -211,7 +148,12 @@ app.get('/api/debug', requireAuth, (req, res) => {
 
 // ─── Admin routes ─────────────────────────────────────────────────────────
 app.get('/api/admin/users', requireAdmin, (req, res) => {
-  const users = loadUsers().map(({ id, username, isAdmin, createdAt }) => ({ id, username, isAdmin, createdAt }));
+  const users = db.getAllUsers().map(u => ({
+    id: u.id,
+    username: u.username,
+    isAdmin: !!u.is_admin,
+    createdAt: u.created_at,
+  }));
   res.json(users);
 });
 
@@ -219,29 +161,22 @@ app.post('/api/admin/users', requireAdmin, (req, res) => {
   const { username, password, isAdmin } = req.body || {};
   if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
   if (password.length < 4) return res.status(400).json({ error: 'Password must be at least 4 characters' });
-  const users = loadUsers();
-  if (users.find(u => u.username === username)) return res.status(400).json({ error: 'Username already exists' });
+  if (db.getUser(username)) return res.status(400).json({ error: 'Username already exists' });
   const passwordHash = bcrypt.hashSync(password, 10);
-  const user = { id: uuidv4(), username, passwordHash, isAdmin: !!isAdmin, createdAt: new Date().toISOString() };
-  users.push(user);
-  saveUsers(users);
-  res.json({ id: user.id, username: user.username, isAdmin: user.isAdmin, createdAt: user.createdAt });
+  const id = uuidv4();
+  db.createUser(id, username, passwordHash, !!isAdmin);
+  const user = db.getUserById(id);
+  res.json({ id: user.id, username: user.username, isAdmin: !!user.is_admin, createdAt: user.created_at });
 });
 
 app.delete('/api/admin/users/:id', requireAdmin, (req, res) => {
   const { id } = req.params;
   if (id === req.session.userId) return res.status(400).json({ error: 'Cannot delete yourself' });
-  let users = loadUsers();
-  const target = users.find(u => u.id === id);
+  const target = db.getUserById(id);
   if (!target) return res.status(404).json({ error: 'User not found' });
-  if (target.isAdmin) {
-    const adminCount = users.filter(u => u.isAdmin).length;
-    if (adminCount <= 1) return res.status(400).json({ error: 'Cannot delete the only admin' });
-  }
-  users = users.filter(u => u.id !== id);
-  saveUsers(users);
-  const sf = songsFile(id);
-  if (fs.existsSync(sf)) fs.unlinkSync(sf);
+  if (target.is_admin && db.countAdmins() <= 1)
+    return res.status(400).json({ error: 'Cannot delete the only admin' });
+  db.deleteUser(id);
   res.json({ ok: true });
 });
 
@@ -249,25 +184,27 @@ app.put('/api/admin/users/:id/password', requireAdmin, (req, res) => {
   const { id } = req.params;
   const { password } = req.body || {};
   if (!password || password.length < 4) return res.status(400).json({ error: 'Password must be at least 4 characters' });
-  const users = loadUsers();
-  const user = users.find(u => u.id === id);
+  const user = db.getUserById(id);
   if (!user) return res.status(404).json({ error: 'User not found' });
-  user.passwordHash = bcrypt.hashSync(password, 10);
-  saveUsers(users);
+  db.updatePassword(id, bcrypt.hashSync(password, 10));
   res.json({ ok: true });
 });
 
 app.get('/api/admin/settings', requireAdmin, (req, res) => {
-  res.json(loadSettings());
+  res.json({
+    tab4uCookies: db.getSetting('tab4u_cookies'),
+    ugCookies:    db.getSetting('ug_cookies'),
+  });
 });
 
 app.put('/api/admin/settings', requireAdmin, (req, res) => {
-  const settings = loadSettings();
   const { tab4uCookies, ugCookies } = req.body || {};
-  if (tab4uCookies !== undefined) settings.tab4uCookies = tab4uCookies;
-  if (ugCookies !== undefined) settings.ugCookies = ugCookies;
-  saveSettings(settings);
-  res.json(settings);
+  if (tab4uCookies !== undefined) db.setSetting('tab4u_cookies', tab4uCookies);
+  if (ugCookies    !== undefined) db.setSetting('ug_cookies',    ugCookies);
+  res.json({
+    tab4uCookies: db.getSetting('tab4u_cookies'),
+    ugCookies:    db.getSetting('ug_cookies'),
+  });
 });
 
 // ─── Utility ──────────────────────────────────────────────────────────────
@@ -497,5 +434,10 @@ function parseUGData(store) {
 }
 
 app.listen(PORT, () => {
-  console.log(`\n  ChordCapo -> http://localhost:${PORT}\n`);
+  console.log(`\n  🎸 ChordCapo → http://localhost:${PORT}`);
+  console.log(`  💾 Database: ${db.DB_PATH}`);
+  if (newAdminPassword) {
+    console.log(`  👤 Admin password: ${newAdminPassword}  ← save this, it won't be shown again`);
+  }
+  console.log('');
 });
