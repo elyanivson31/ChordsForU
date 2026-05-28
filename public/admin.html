@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ChordCapo — Admin</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:           #F2EDE6;
+      --surface:      #FFFFFF;
+      --surface-2:    #FAF8F5;
+      --border:       #E4DDD3;
+      --border-2:     #D0C7BB;
+      --text:         #18140F;
+      --text-2:       #5C5047;
+      --text-3:       #9E8F80;
+      --blue:         #1B4FD8;
+      --blue-hover:   #1740BA;
+      --green:        #15803D;
+      --red:          #DC2626;
+      --red-bg:       #FEF2F2;
+      --amber:        #D97706;
+      --shadow-sm:    0 1px 2px rgba(0,0,0,.06), 0 2px 6px rgba(0,0,0,.04);
+      --shadow:       0 2px 8px rgba(0,0,0,.08), 0 6px 20px rgba(0,0,0,.05);
+      --r:            14px;
+      --r-sm:         9px;
+      --r-xs:         6px;
+    }
+
+    body {
+      font-family: 'Heebo', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* Header */
+    .header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 0 28px;
+      height: 60px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .logo {
+      width: 34px; height: 34px;
+      background: linear-gradient(135deg, #1B4FD8 0%, #2563EB 100%);
+      border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 17px;
+      flex-shrink: 0;
+    }
+
+    .header-title {
+      font-size: 16px; font-weight: 700; color: var(--text);
+    }
+
+    .header-right {
+      margin-left: auto;
+      display: flex; align-items: center; gap: 10px;
+    }
+
+    .btn {
+      height: 34px; padding: 0 14px;
+      border: none; border-radius: var(--r-sm);
+      font-size: 13px; font-weight: 600; font-family: inherit;
+      cursor: pointer; white-space: nowrap;
+      transition: background .15s, box-shadow .15s;
+    }
+    .btn-primary { background: var(--blue); color: #fff; }
+    .btn-primary:hover { background: var(--blue-hover); }
+    .btn-primary:disabled { opacity: .5; cursor: not-allowed; }
+    .btn-outline {
+      background: var(--surface); color: var(--text-2);
+      border: 1.5px solid var(--border-2);
+    }
+    .btn-outline:hover { border-color: var(--blue); color: var(--blue); background: #EFF6FF; }
+    .btn-danger { background: var(--surface); color: var(--red); border: 1.5px solid #FECACA; }
+    .btn-danger:hover { background: var(--red-bg); border-color: var(--red); }
+
+    .back-link {
+      font-size: 13px; font-weight: 600; color: var(--text-2);
+      text-decoration: none;
+      padding: 6px 12px;
+      border: 1.5px solid var(--border-2);
+      border-radius: var(--r-sm);
+      transition: all .15s;
+    }
+    .back-link:hover { border-color: var(--blue); color: var(--blue); background: #EFF6FF; }
+
+    /* Layout */
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 36px 24px 80px;
+    }
+
+    /* Cards */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      box-shadow: var(--shadow);
+      margin-bottom: 24px;
+      overflow: hidden;
+    }
+
+    .card-header {
+      padding: 18px 24px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface-2);
+      display: flex; align-items: center; justify-content: space-between;
+    }
+
+    .card-title {
+      font-size: 14px; font-weight: 700; color: var(--text);
+      letter-spacing: .01em;
+    }
+
+    .card-body { padding: 24px; }
+
+    /* Form fields */
+    .field { margin-bottom: 16px; }
+    .field:last-child { margin-bottom: 0; }
+
+    .field-label {
+      display: block;
+      font-size: 11px; font-weight: 700;
+      text-transform: uppercase; letter-spacing: .09em;
+      color: var(--text-3); margin-bottom: 6px;
+    }
+
+    .field-input {
+      width: 100%; height: 42px;
+      padding: 0 12px;
+      border: 1.5px solid var(--border);
+      border-radius: var(--r-sm);
+      font-size: 14px; font-family: inherit;
+      background: var(--surface-2);
+      color: var(--text);
+      outline: none;
+      transition: border-color .15s, background .15s;
+    }
+    .field-input:focus { border-color: var(--blue); background: var(--surface); }
+
+    .field-textarea {
+      width: 100%; min-height: 80px;
+      padding: 10px 12px;
+      border: 1.5px solid var(--border);
+      border-radius: var(--r-sm);
+      font-size: 12px; font-family: 'JetBrains Mono', monospace;
+      background: var(--surface-2);
+      color: var(--text-2);
+      outline: none;
+      resize: vertical;
+      line-height: 1.5;
+      transition: border-color .15s;
+    }
+    .field-textarea:focus { border-color: var(--blue); }
+
+    .checkbox-row {
+      display: flex; align-items: center; gap: 8px;
+      margin-top: 4px;
+    }
+    .checkbox-row input[type="checkbox"] { width: 16px; height: 16px; cursor: pointer; }
+    .checkbox-row label { font-size: 13px; color: var(--text-2); cursor: pointer; }
+
+    /* Alert */
+    .alert {
+      padding: 10px 14px;
+      border-radius: var(--r-sm);
+      font-size: 13px; font-weight: 500;
+      margin-bottom: 16px;
+      display: none;
+    }
+    .alert.show { display: block; }
+    .alert-success { background: #F0FDF4; border: 1.5px solid #BBF7D0; color: var(--green); }
+    .alert-error { background: var(--red-bg); border: 1.5px solid #FECACA; color: var(--red); }
+
+    /* Users table */
+    table {
+      width: 100%; border-collapse: collapse;
+    }
+    th {
+      text-align: left;
+      font-size: 11px; font-weight: 700;
+      text-transform: uppercase; letter-spacing: .07em;
+      color: var(--text-3);
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface-2);
+    }
+    td {
+      padding: 12px 12px;
+      border-bottom: 1px solid var(--border);
+      font-size: 14px; color: var(--text);
+      vertical-align: middle;
+    }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: var(--surface-2); }
+
+    .role-badge {
+      display: inline-block;
+      font-size: 11px; font-weight: 700;
+      padding: 2px 8px; border-radius: 10px;
+    }
+    .role-admin { background: #FEF3C7; color: #92400E; border: 1px solid #FCD34D; }
+    .role-user { background: var(--bg); color: var(--text-3); border: 1px solid var(--border-2); }
+
+    .actions { display: flex; gap: 6px; }
+
+    /* Add user form */
+    .add-user-form {
+      display: none;
+      padding: 20px 24px;
+      border-top: 1px solid var(--border);
+      background: var(--surface-2);
+    }
+    .add-user-form.open { display: block; }
+    .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    .form-actions { display: flex; gap: 8px; margin-top: 16px; }
+
+    @media (max-width: 600px) {
+      .header { padding: 0 16px; }
+      .container { padding: 18px 14px 60px; }
+      .card-body { padding: 16px; }
+      .form-grid { grid-template-columns: 1fr; }
+      .actions { flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+
+<header class="header">
+  <div class="logo">🎸</div>
+  <div class="header-title">Admin Panel</div>
+  <div class="header-right">
+    <a href="/" class="back-link">← Back to App</a>
+    <button class="btn btn-outline" onclick="signOut()">Sign out</button>
+  </div>
+</header>
+
+<main class="container">
+
+  <!-- Cookies card -->
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">Global Cookies</div>
+      <button class="btn btn-primary" onclick="saveCookies()">Save</button>
+    </div>
+    <div class="card-body">
+      <div id="cookieAlert" class="alert"></div>
+
+      <div class="field">
+        <label class="field-label" for="tab4uCookies">Tab4U Cookies</label>
+        <textarea id="tab4uCookies" class="field-textarea" placeholder="adT=...; LSize=...; lesInS=...; ..." spellcheck="false"></textarea>
+      </div>
+
+      <div class="field">
+        <label class="field-label" for="ugCookies">Ultimate Guitar Cookies</label>
+        <textarea id="ugCookies" class="field-textarea" placeholder="cf_clearance=...; _ga=...; ..." spellcheck="false"></textarea>
+      </div>
+    </div>
+  </div>
+
+  <!-- Users card -->
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">Users</div>
+      <button class="btn btn-outline" onclick="toggleAddUser()">+ Add User</button>
+    </div>
+
+    <div id="addUserForm" class="add-user-form">
+      <div id="addUserAlert" class="alert"></div>
+      <div class="form-grid">
+        <div class="field">
+          <label class="field-label" for="newUsername">Username</label>
+          <input id="newUsername" class="field-input" type="text" autocomplete="off" spellcheck="false" />
+        </div>
+        <div class="field">
+          <label class="field-label" for="newPassword">Password</label>
+          <input id="newPassword" class="field-input" type="password" autocomplete="new-password" />
+        </div>
+      </div>
+      <div class="checkbox-row">
+        <input id="newIsAdmin" type="checkbox" />
+        <label for="newIsAdmin">Admin</label>
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-primary" onclick="addUser()">Create User</button>
+        <button class="btn btn-outline" onclick="toggleAddUser()">Cancel</button>
+      </div>
+    </div>
+
+    <div id="usersAlert" class="alert" style="margin:16px 24px 0"></div>
+
+    <table id="usersTable">
+      <thead>
+        <tr>
+          <th>Username</th>
+          <th>Role</th>
+          <th>Created</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="usersBody">
+        <tr><td colspan="4" style="text-align:center;color:var(--text-3);padding:24px">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+</main>
+
+<script>
+let currentUser = null;
+
+async function init() {
+  const r = await fetch('/api/auth/me');
+  if (!r.ok) { window.location.replace('/login.html'); return; }
+  currentUser = await r.json();
+  if (!currentUser.isAdmin) { window.location.replace('/'); return; }
+  await loadCookies();
+  await loadUsers();
+}
+
+async function signOut() {
+  await fetch('/api/auth/logout', { method: 'POST' });
+  window.location.replace('/login.html');
+}
+
+// ── Cookies ────────────────────────────────────────────────────────────
+async function loadCookies() {
+  const r = await fetch('/api/admin/settings');
+  if (!r.ok) return;
+  const s = await r.json();
+  document.getElementById('tab4uCookies').value = s.tab4uCookies || '';
+  document.getElementById('ugCookies').value = s.ugCookies || '';
+}
+
+async function saveCookies() {
+  const tab4uCookies = document.getElementById('tab4uCookies').value;
+  const ugCookies = document.getElementById('ugCookies').value;
+  const r = await fetch('/api/admin/settings', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ tab4uCookies, ugCookies }),
+  });
+  const alert = document.getElementById('cookieAlert');
+  if (r.ok) {
+    showAlert(alert, 'success', 'Settings saved.');
+  } else {
+    const d = await r.json();
+    showAlert(alert, 'error', d.error || 'Failed to save.');
+  }
+}
+
+// ── Users ──────────────────────────────────────────────────────────────
+let users = [];
+
+async function loadUsers() {
+  const r = await fetch('/api/admin/users');
+  if (!r.ok) return;
+  users = await r.json();
+  renderUsers();
+}
+
+function renderUsers() {
+  const tbody = document.getElementById('usersBody');
+  if (users.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--text-3);padding:24px">No users.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = users.map(u => {
+    const isSelf = u.id === currentUser.id;
+    const created = new Date(u.createdAt).toLocaleDateString();
+    return `
+      <tr>
+        <td style="font-weight:${isSelf ? '700' : '400'}">${esc(u.username)}${isSelf ? ' <span style="font-size:11px;color:var(--text-3)">(you)</span>' : ''}</td>
+        <td><span class="role-badge ${u.isAdmin ? 'role-admin' : 'role-user'}">${u.isAdmin ? 'Admin' : 'User'}</span></td>
+        <td style="color:var(--text-3);font-size:13px">${created}</td>
+        <td>
+          <div class="actions">
+            <button class="btn btn-outline" style="height:30px;font-size:12px" onclick="resetPassword('${u.id}', '${esc(u.username)}')">Reset Password</button>
+            ${!isSelf ? `<button class="btn btn-danger" style="height:30px;font-size:12px" onclick="deleteUser('${u.id}', '${esc(u.username)}')">Delete</button>` : ''}
+          </div>
+        </td>
+      </tr>`;
+  }).join('');
+}
+
+function toggleAddUser() {
+  const form = document.getElementById('addUserForm');
+  form.classList.toggle('open');
+  if (!form.classList.contains('open')) {
+    document.getElementById('newUsername').value = '';
+    document.getElementById('newPassword').value = '';
+    document.getElementById('newIsAdmin').checked = false;
+    document.getElementById('addUserAlert').classList.remove('show');
+  }
+}
+
+async function addUser() {
+  const username = document.getElementById('newUsername').value.trim();
+  const password = document.getElementById('newPassword').value;
+  const isAdmin = document.getElementById('newIsAdmin').checked;
+  const alert = document.getElementById('addUserAlert');
+
+  if (!username || !password) { showAlert(alert, 'error', 'Username and password are required.'); return; }
+  if (password.length < 4) { showAlert(alert, 'error', 'Password must be at least 4 characters.'); return; }
+
+  const r = await fetch('/api/admin/users', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password, isAdmin }),
+  });
+  const d = await r.json();
+  if (!r.ok) { showAlert(alert, 'error', d.error || 'Failed to create user.'); return; }
+
+  toggleAddUser();
+  await loadUsers();
+  showUsersAlert('success', `User "${username}" created.`);
+}
+
+async function resetPassword(id, username) {
+  const password = prompt(`New password for "${username}" (min 4 chars):`);
+  if (!password) return;
+  if (password.length < 4) { alert('Password must be at least 4 characters.'); return; }
+
+  const r = await fetch(`/api/admin/users/${id}/password`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password }),
+  });
+  const d = await r.json();
+  if (!r.ok) { showUsersAlert('error', d.error || 'Failed to reset password.'); return; }
+  showUsersAlert('success', `Password for "${username}" has been reset.`);
+}
+
+async function deleteUser(id, username) {
+  if (!confirm(`Delete user "${username}" and all their songs? This cannot be undone.`)) return;
+
+  const r = await fetch(`/api/admin/users/${id}`, { method: 'DELETE' });
+  const d = await r.json();
+  if (!r.ok) { showUsersAlert('error', d.error || 'Failed to delete user.'); return; }
+  await loadUsers();
+  showUsersAlert('success', `User "${username}" deleted.`);
+}
+
+// ── Helpers ────────────────────────────────────────────────────────────
+function showAlert(el, type, msg) {
+  el.className = `alert show alert-${type}`;
+  el.textContent = msg;
+  setTimeout(() => el.classList.remove('show'), 4000);
+}
+
+function showUsersAlert(type, msg) {
+  showAlert(document.getElementById('usersAlert'), type, msg);
+}
+
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+init();
+</script>
+</body>
+</html>

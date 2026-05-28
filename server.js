@@ -5,6 +5,9 @@ const path = require('path');
 const fs = require('fs');
 const { URL } = require('url');
 const puppeteer = require('puppeteer');
+const session = require('express-session');
+const bcrypt = require('bcryptjs');
+const { v4: uuidv4 } = require('uuid');
 
 const CHROME_PATHS = [
   process.env.CHROME_PATH,
@@ -14,64 +17,148 @@ const CHROME_PATHS = [
 
 function findChrome() {
   for (const p of CHROME_PATHS) if (fs.existsSync(p)) return p;
-  return undefined; // fall back to puppeteer's bundled Chromium
+  return undefined;
 }
 
 const app = express();
 const PORT = process.env.PORT || 3334;
-const SONGS_FILE = path.join(__dirname, 'songs.json');
+const DATA_DIR = path.join(__dirname, 'data');
 
+// ─── Data directory setup ────────────────────────────────────────────────
+if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+
+const USERS_FILE    = path.join(DATA_DIR, 'users.json');
+const SETTINGS_FILE = path.join(DATA_DIR, 'settings.json');
+
+// ─── Users ───────────────────────────────────────────────────────────────
+function loadUsers() {
+  try {
+    if (fs.existsSync(USERS_FILE)) return JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
+  } catch {}
+  return [];
+}
+
+function saveUsers(users) {
+  fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2), 'utf8');
+}
+
+function initDefaultAdmin() {
+  let users = loadUsers();
+  if (users.length > 0) return;
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
+  let password = '';
+  for (let i = 0; i < 10; i++) password += chars[Math.floor(Math.random() * chars.length)];
+  const passwordHash = bcrypt.hashSync(password, 10);
+  const admin = { id: uuidv4(), username: 'admin', passwordHash, isAdmin: true, createdAt: new Date().toISOString() };
+  users = [admin];
+  saveUsers(users);
+  console.log('\n  ┌─────────────────────────────────────────┐');
+  console.log('  │   DEFAULT ADMIN CREDENTIALS             │');
+  console.log('  │   Username: admin                       │');
+  console.log(`  │   Password: ${password}          │`);
+  console.log('  └─────────────────────────────────────────┘\n');
+}
+
+initDefaultAdmin();
+
+// ─── Settings ────────────────────────────────────────────────────────────
+function loadSettings() {
+  try {
+    if (fs.existsSync(SETTINGS_FILE)) return JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8'));
+  } catch {}
+  return { tab4uCookies: '', ugCookies: '' };
+}
+
+function saveSettings(settings) {
+  fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2), 'utf8');
+}
+
+if (!fs.existsSync(SETTINGS_FILE)) saveSettings({ tab4uCookies: '', ugCookies: '' });
+
+// ─── Per-user song store ──────────────────────────────────────────────────
+function songsFile(userId) {
+  return path.join(DATA_DIR, `songs_${userId}.json`);
+}
+
+function loadUserSongs(userId) {
+  try {
+    const f = songsFile(userId);
+    if (fs.existsSync(f)) return JSON.parse(fs.readFileSync(f, 'utf8'));
+  } catch {}
+  return {};
+}
+
+function saveUserSongs(userId, store) {
+  fs.writeFileSync(songsFile(userId), JSON.stringify(store, null, 2), 'utf8');
+}
+
+// ─── Middleware ───────────────────────────────────────────────────────────
+app.use(express.json());
+app.use(session({
+  secret: process.env.SESSION_SECRET || 'chordcapo-secret',
+  resave: false,
+  saveUninitialized: false,
+  cookie: { maxAge: 7 * 24 * 60 * 60 * 1000 },
+}));
 app.use(express.static(path.join(__dirname, 'public')));
 
-// ─── Song store (in-memory + persisted to songs.json) ─────────────────────
-let songStore = {};
-
-function loadStore() {
-  try {
-    if (fs.existsSync(SONGS_FILE))
-      songStore = JSON.parse(fs.readFileSync(SONGS_FILE, 'utf8'));
-  } catch { songStore = {}; }
+function requireAuth(req, res, next) {
+  if (!req.session.userId) return res.status(401).json({ error: 'Not authenticated' });
+  next();
 }
 
-function saveStore() {
-  fs.writeFileSync(SONGS_FILE, JSON.stringify(songStore, null, 2), 'utf8');
+function requireAdmin(req, res, next) {
+  if (!req.session.userId) return res.status(401).json({ error: 'Not authenticated' });
+  if (!req.session.isAdmin) return res.status(403).json({ error: 'Admin required' });
+  next();
 }
 
-function normalizeUrl(rawUrl) {
-  try {
-    const u = new URL(rawUrl);
-    u.searchParams.delete('ton'); // strip Tab4U transposition param
-    return u.toString();
-  } catch { return rawUrl; }
-}
+// ─── Auth routes ──────────────────────────────────────────────────────────
+app.post('/api/auth/login', (req, res) => {
+  const { username, password } = req.body || {};
+  if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
+  const users = loadUsers();
+  const user = users.find(u => u.username === username);
+  if (!user || !bcrypt.compareSync(password, user.passwordHash))
+    return res.status(401).json({ error: 'Invalid username or password' });
+  req.session.userId  = user.id;
+  req.session.isAdmin = user.isAdmin;
+  res.json({ id: user.id, username: user.username, isAdmin: user.isAdmin });
+});
 
-function isUGUrl(url) {
-  return /ultimate-guitar\.com/i.test(url);
-}
+app.post('/api/auth/logout', (req, res) => {
+  req.session.destroy(() => res.json({ ok: true }));
+});
 
-loadStore();
+app.get('/api/auth/me', (req, res) => {
+  if (!req.session.userId) return res.status(401).json({ error: 'Not authenticated' });
+  const users = loadUsers();
+  const user = users.find(u => u.id === req.session.userId);
+  if (!user) return res.status(401).json({ error: 'User not found' });
+  res.json({ id: user.id, username: user.username, isAdmin: user.isAdmin });
+});
 
-// ─── Routes ───────────────────────────────────────────────────────────────
-
-// List all saved songs (metadata only, no sections)
-app.get('/api/songs', (_req, res) => {
-  const list = Object.values(songStore).map(({ url, title, artist, isHebrew, savedAt }) =>
+// ─── Song routes ──────────────────────────────────────────────────────────
+app.get('/api/songs', requireAuth, (req, res) => {
+  const store = loadUserSongs(req.session.userId);
+  const list = Object.values(store).map(({ url, title, artist, isHebrew, savedAt }) =>
     ({ url, title, artist, isHebrew, savedAt })
   );
   list.sort((a, b) => new Date(b.savedAt) - new Date(a.savedAt));
   res.json(list);
 });
 
-// Fetch (or return cached) song + save it
-app.get('/api/song', (req, res) => {
-  const rawUrl  = req.query.url;
-  const cookies = req.query.cookies || '';
+app.get('/api/song', requireAuth, (req, res) => {
+  const rawUrl = req.query.url;
   if (!rawUrl) return res.status(400).json({ error: 'URL parameter is required' });
 
   const key = normalizeUrl(rawUrl);
+  const store = loadUserSongs(req.session.userId);
 
-  // Serve from cache if available
-  if (songStore[key]) return res.json(songStore[key]);
+  if (store[key]) return res.json(store[key]);
+
+  const settings = loadSettings();
+  const cookies = isUGUrl(rawUrl) ? (settings.ugCookies || '') : (settings.tab4uCookies || '');
 
   const fetcher = isUGUrl(rawUrl)
     ? fetchUGWithPuppeteer(rawUrl, cookies)
@@ -80,18 +167,27 @@ app.get('/api/song', (req, res) => {
   fetcher
     .then(result => {
       const song = isUGUrl(rawUrl) ? parseUGData(result.data) : parseSong(result);
-      songStore[key] = { ...song, url: key, savedAt: new Date().toISOString() };
-      saveStore();
-      res.json(songStore[key]);
+      store[key] = { ...song, url: key, savedAt: new Date().toISOString() };
+      saveUserSongs(req.session.userId, store);
+      res.json(store[key]);
     })
     .catch(err => res.status(500).json({ error: err.message }));
 });
 
-// Debug: inspect raw HTML for a URL
-app.get('/api/debug', (req, res) => {
+app.delete('/api/songs', requireAuth, (req, res) => {
+  const key = normalizeUrl(req.query.url);
+  const store = loadUserSongs(req.session.userId);
+  delete store[key];
+  saveUserSongs(req.session.userId, store);
+  res.json({ ok: true });
+});
+
+// ─── Debug route ──────────────────────────────────────────────────────────
+app.get('/api/debug', requireAuth, (req, res) => {
   const rawUrl  = req.query.url;
-  const cookies = req.query.cookies || '';
   if (!rawUrl) return res.status(400).json({ error: 'url required' });
+  const settings = loadSettings();
+  const cookies = isUGUrl(rawUrl) ? (settings.ugCookies || '') : (settings.tab4uCookies || '');
   const fetcher = isUGUrl(rawUrl) ? fetchUGWithPuppeteer(rawUrl, cookies) : fetchUrl(rawUrl, cookies);
   fetcher
     .then(result => {
@@ -113,15 +209,81 @@ app.get('/api/debug', (req, res) => {
     .catch(err => res.status(500).json({ error: err.message }));
 });
 
-// Delete a saved song
-app.delete('/api/songs', (req, res) => {
-  const key = normalizeUrl(req.query.url);
-  delete songStore[key];
-  saveStore();
+// ─── Admin routes ─────────────────────────────────────────────────────────
+app.get('/api/admin/users', requireAdmin, (req, res) => {
+  const users = loadUsers().map(({ id, username, isAdmin, createdAt }) => ({ id, username, isAdmin, createdAt }));
+  res.json(users);
+});
+
+app.post('/api/admin/users', requireAdmin, (req, res) => {
+  const { username, password, isAdmin } = req.body || {};
+  if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
+  if (password.length < 4) return res.status(400).json({ error: 'Password must be at least 4 characters' });
+  const users = loadUsers();
+  if (users.find(u => u.username === username)) return res.status(400).json({ error: 'Username already exists' });
+  const passwordHash = bcrypt.hashSync(password, 10);
+  const user = { id: uuidv4(), username, passwordHash, isAdmin: !!isAdmin, createdAt: new Date().toISOString() };
+  users.push(user);
+  saveUsers(users);
+  res.json({ id: user.id, username: user.username, isAdmin: user.isAdmin, createdAt: user.createdAt });
+});
+
+app.delete('/api/admin/users/:id', requireAdmin, (req, res) => {
+  const { id } = req.params;
+  if (id === req.session.userId) return res.status(400).json({ error: 'Cannot delete yourself' });
+  let users = loadUsers();
+  const target = users.find(u => u.id === id);
+  if (!target) return res.status(404).json({ error: 'User not found' });
+  if (target.isAdmin) {
+    const adminCount = users.filter(u => u.isAdmin).length;
+    if (adminCount <= 1) return res.status(400).json({ error: 'Cannot delete the only admin' });
+  }
+  users = users.filter(u => u.id !== id);
+  saveUsers(users);
+  const sf = songsFile(id);
+  if (fs.existsSync(sf)) fs.unlinkSync(sf);
   res.json({ ok: true });
 });
 
-// ─── Puppeteer fetch (for Cloudflare-protected sites) ─────────────────
+app.put('/api/admin/users/:id/password', requireAdmin, (req, res) => {
+  const { id } = req.params;
+  const { password } = req.body || {};
+  if (!password || password.length < 4) return res.status(400).json({ error: 'Password must be at least 4 characters' });
+  const users = loadUsers();
+  const user = users.find(u => u.id === id);
+  if (!user) return res.status(404).json({ error: 'User not found' });
+  user.passwordHash = bcrypt.hashSync(password, 10);
+  saveUsers(users);
+  res.json({ ok: true });
+});
+
+app.get('/api/admin/settings', requireAdmin, (req, res) => {
+  res.json(loadSettings());
+});
+
+app.put('/api/admin/settings', requireAdmin, (req, res) => {
+  const settings = loadSettings();
+  const { tab4uCookies, ugCookies } = req.body || {};
+  if (tab4uCookies !== undefined) settings.tab4uCookies = tab4uCookies;
+  if (ugCookies !== undefined) settings.ugCookies = ugCookies;
+  saveSettings(settings);
+  res.json(settings);
+});
+
+// ─── Utility ──────────────────────────────────────────────────────────────
+function normalizeUrl(rawUrl) {
+  try {
+    const u = new URL(rawUrl);
+    u.searchParams.delete('ton');
+    return u.toString();
+  } catch { return rawUrl; }
+}
+
+function isUGUrl(url) {
+  return /ultimate-guitar\.com/i.test(url);
+}
+
+// ─── Puppeteer fetch ──────────────────────────────────────────────────────
 async function fetchUGWithPuppeteer(targetUrl, cookies = '') {
   const executablePath = findChrome();
   const browser = await puppeteer.launch({
@@ -144,11 +306,8 @@ async function fetchUGWithPuppeteer(targetUrl, cookies = '') {
 
     await page.goto(targetUrl, { waitUntil: 'networkidle2', timeout: 30000 });
 
-    // Extract song data directly from the runtime JS state
     const data = await page.evaluate(() => {
-      // Try window.UGAPP store
       if (window.UGAPP && window.UGAPP.store) return window.UGAPP.store;
-      // Try common SSR data patterns
       const el = document.querySelector('.js-store[data-content]');
       if (el) return JSON.parse(el.dataset.content);
       return null;
@@ -188,7 +347,7 @@ function fetchUrl(targetUrl, cookies = '', redirected = false) {
 }
 
 // ─── Parsing ──────────────────────────────────────────────────────────────
-const HEBREW_RE = /[\u0590-\u05FF]/;
+const HEBREW_RE = /[֐-׿]/;
 
 function decodeEntities(str) {
   return str
@@ -214,7 +373,7 @@ function parseSong(html) {
   if (startIdx === -1) {
     if (!html.includes('tab4u') && !html.includes('Tab4U'))
       throw new Error('Not a Tab4U page — check the URL.');
-    throw new Error('Song content not found — your session may have expired. Open Tab4U in Chrome, copy the Cookie header (F12 → Network → any request) and paste it in the "Browser Cookies" field.');
+    throw new Error('Song content not found — your session may have expired. Open Tab4U in Chrome, copy the Cookie header (F12 → Network → any request) and paste it in the Admin settings.');
   }
 
   let raw = html.substring(startIdx, startIdx + 80000);
@@ -264,8 +423,6 @@ function parseSong(html) {
       sections.push({ type: 'line', chord: text, lyric: hasLyric ? next.text.trim() : '' });
       i += hasLyric ? 2 : 1;
     } else {
-      // On mixed tab+chord pages, orphan lyric rows come from the tab section — skip them.
-      // On pure chord pages, treat them as section labels (e.g. "Verse", "Chorus").
       if (!hasTabs) sections.push({ type: 'label', text: text.trim() });
       i++;
     }
@@ -274,7 +431,7 @@ function parseSong(html) {
   return { title, artist, isHebrew, sections };
 }
 
-// ─── Capo detection ───────────────────────────────────────────────────
+// ─── Capo detection ───────────────────────────────────────────────────────
 const ROMAN_MAP = { I:1,II:2,III:3,IV:4,V:5,VI:6,VII:7,VIII:8,IX:9,X:10,XI:11,XII:12 };
 function parseCapoFromText(text) {
   const m = text.match(/\bcapo\s*([IVXLC]+|\d+)/i);
@@ -283,7 +440,7 @@ function parseCapoFromText(text) {
   return ROMAN_MAP[raw] ?? (parseInt(raw) || 0);
 }
 
-// ─── Ultimate Guitar parser ───────────────────────────────────────────
+// ─── Ultimate Guitar parser ───────────────────────────────────────────────
 function parseUGData(store) {
   if (!store) throw new Error('No data returned from Ultimate Guitar page. Try again or check the URL.');
 
@@ -301,28 +458,21 @@ function parseUGData(store) {
   const sections = [];
   let i = 0;
 
-  // Detect guitar tablature lines (e|---1--- style) vs chord/lyric lines
   const isTabLine = (l) => /^\s*[eEbBgGdDaA]\|/.test(l);
 
   while (i < lines.length) {
     const line = lines[i];
-    const trimmed = line.trim();
-
-    // Strip inline [tab]/[/tab] markers from the line
     const stripped = line.replace(/\[tab\]/gi, '').replace(/\[\/tab\]/gi, '');
     const strippedTrimmed = stripped.trim();
 
-    // Skip lines that are now empty or pure guitar tab notation
     if (!strippedTrimmed || isTabLine(strippedTrimmed)) { i++; continue; }
 
-    // Section label: [Verse 1], [Chorus], [Bridge] etc. — no [ch] inside
     if (strippedTrimmed.startsWith('[') && !strippedTrimmed.includes('[ch]')) {
       const label = strippedTrimmed.replace(/^\[/, '').replace(/\].*$/, '').trim();
       if (label) sections.push({ type: 'label', text: label });
       i++; continue;
     }
 
-    // Chord line
     if (stripped.includes('[ch]')) {
       const chord = stripped.replace(/\[ch\]/g, '').replace(/\[\/ch\]/g, '').trimEnd();
       const next = lines[i + 1];
@@ -347,6 +497,5 @@ function parseUGData(store) {
 }
 
 app.listen(PORT, () => {
-  console.log(`\n  🎸 ChordCapo → http://localhost:${PORT}\n`);
-  console.log(`  Songs stored: ${Object.keys(songStore).length}\n`);
+  console.log(`\n  ChordCapo -> http://localhost:${PORT}\n`);
 });

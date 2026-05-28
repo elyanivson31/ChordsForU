@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ChordCapo — Sign In</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:         #F2EDE6;
+      --surface:    #FFFFFF;
+      --border:     #E4DDD3;
+      --border-2:   #D0C7BB;
+      --text:       #18140F;
+      --text-2:     #5C5047;
+      --text-3:     #9E8F80;
+      --blue:       #1B4FD8;
+      --blue-hover: #1740BA;
+      --red:        #DC2626;
+      --red-bg:     #FEF2F2;
+      --shadow:     0 2px 8px rgba(0,0,0,.08), 0 6px 20px rgba(0,0,0,.05);
+      --r:          14px;
+      --r-sm:       9px;
+    }
+
+    body {
+      font-family: 'Heebo', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      -webkit-font-smoothing: antialiased;
+      padding: 24px;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      box-shadow: var(--shadow);
+      padding: 48px 40px 40px;
+      width: 100%;
+      max-width: 380px;
+    }
+
+    .logo-wrap {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 32px;
+    }
+
+    .logo {
+      width: 40px; height: 40px;
+      background: linear-gradient(135deg, #1B4FD8 0%, #2563EB 100%);
+      border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 20px;
+      box-shadow: 0 2px 8px rgba(27,79,216,.3);
+      flex-shrink: 0;
+    }
+
+    .app-name {
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--text);
+      letter-spacing: -.02em;
+    }
+
+    .field { margin-bottom: 18px; }
+
+    .field-label {
+      font-size: 11px; font-weight: 700;
+      text-transform: uppercase; letter-spacing: .09em;
+      color: var(--text-3); margin-bottom: 6px;
+      display: block;
+    }
+
+    .field-input {
+      width: 100%; height: 44px;
+      padding: 0 14px;
+      border: 1.5px solid var(--border);
+      border-radius: var(--r-sm);
+      font-size: 14px; font-family: inherit;
+      background: #FAF8F5;
+      color: var(--text);
+      outline: none;
+      transition: border-color .15s, background .15s;
+    }
+    .field-input:focus { border-color: var(--blue); background: var(--surface); }
+
+    .btn-primary {
+      width: 100%; height: 46px;
+      border: none; border-radius: var(--r-sm);
+      background: var(--blue); color: #fff;
+      font-size: 15px; font-weight: 600; font-family: inherit;
+      cursor: pointer;
+      box-shadow: 0 2px 8px rgba(27,79,216,.25);
+      transition: background .15s, box-shadow .15s, transform .1s;
+      margin-top: 6px;
+    }
+    .btn-primary:hover { background: var(--blue-hover); box-shadow: 0 4px 12px rgba(27,79,216,.3); }
+    .btn-primary:active { transform: scale(.97); }
+    .btn-primary:disabled { opacity: .5; cursor: not-allowed; transform: none; }
+
+    .error-msg {
+      display: none;
+      margin-top: 16px;
+      padding: 10px 14px;
+      border-radius: var(--r-sm);
+      background: var(--red-bg);
+      border: 1.5px solid #FECACA;
+      color: var(--red);
+      font-size: 13.5px; font-weight: 500;
+    }
+    .error-msg.show { display: block; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="logo-wrap">
+      <div class="logo">🎸</div>
+      <div class="app-name">ChordCapo</div>
+    </div>
+
+    <div class="field">
+      <label class="field-label" for="username">Username</label>
+      <input id="username" class="field-input" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" />
+    </div>
+
+    <div class="field">
+      <label class="field-label" for="password">Password</label>
+      <input id="password" class="field-input" type="password" autocomplete="current-password" />
+    </div>
+
+    <button id="signInBtn" class="btn-primary" onclick="signIn()">Sign in</button>
+
+    <div id="errorMsg" class="error-msg"></div>
+  </div>
+
+  <script>
+    // If already logged in, redirect to app
+    fetch('/api/auth/me').then(r => {
+      if (r.ok) window.location.replace('/');
+    });
+
+    document.getElementById('password').addEventListener('keydown', e => {
+      if (e.key === 'Enter') signIn();
+    });
+    document.getElementById('username').addEventListener('keydown', e => {
+      if (e.key === 'Enter') document.getElementById('password').focus();
+    });
+
+    async function signIn() {
+      const username = document.getElementById('username').value.trim();
+      const password = document.getElementById('password').value;
+      const btn = document.getElementById('signInBtn');
+      const err = document.getElementById('errorMsg');
+
+      if (!username || !password) {
+        showError('Please enter your username and password.');
+        return;
+      }
+
+      btn.disabled = true;
+      btn.textContent = 'Signing in…';
+      err.classList.remove('show');
+
+      try {
+        const res = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Login failed');
+        window.location.replace('/');
+      } catch (e) {
+        showError(e.message);
+        btn.disabled = false;
+        btn.textContent = 'Sign in';
+      }
+    }
+
+    function showError(msg) {
+      const err = document.getElementById('errorMsg');
+      err.textContent = msg;
+      err.classList.add('show');
+    }
+  </script>
+</body>
+</html>

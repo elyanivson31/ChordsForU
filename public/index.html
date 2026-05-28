@@ -586,6 +586,10 @@
     <h1>ChordCapo</h1>
     <p>Tab4U → transpose for your capo</p>
   </div>
+  <div style="margin-left:auto;display:flex;align-items:center;gap:10px">
+    <a id="adminLink" href="/admin.html" style="display:none;font-size:13px;font-weight:600;color:var(--blue);text-decoration:none;padding:6px 12px;border:1.5px solid var(--blue);border-radius:var(--r-sm);transition:background .15s" onmouseover="this.style.background='#EFF6FF'" onmouseout="this.style.background=''">Admin</a>
+    <button id="signOutBtn" onclick="signOut()" style="display:none;height:34px;padding:0 14px;border:1.5px solid var(--border-2);border-radius:var(--r-sm);font-size:13px;font-weight:600;font-family:inherit;background:var(--surface);color:var(--text-2);cursor:pointer;transition:all .15s" onmouseover="this.style.borderColor='var(--red)';this.style.color='var(--red)'" onmouseout="this.style.borderColor='var(--border-2)';this.style.color='var(--text-2)'">Sign out</button>
+  </div>
 </header>
 
 <!-- ── Main ──────────────────────────────────────────────────────────── -->
@@ -628,40 +632,6 @@
           <div class="string"></div>
         </div>
         <div class="frets" id="frets"></div>
-      </div>
-    </div>
-
-    <!-- Advanced: cookies -->
-    <div class="adv-toggle" id="advToggle" onclick="toggleAdv()">
-      <span class="adv-arrow">▶</span> Browser Cookies
-      <span id="cookieSavedBadge" style="display:none;margin-left:4px;font-size:11px;color:var(--green);font-weight:600;">✓ saved</span>
-    </div>
-    <div class="adv-panel" id="advPanel">
-      <div class="adv-hint">
-        Open the site in Chrome, press <code>F12</code> → Network → reload → click any request →
-        copy the full <code>Cookie:</code> header value and paste below. Saved in your browser.
-      </div>
-
-      <div class="field-label" style="margin-top:4px;margin-bottom:6px">Tab4U Cookies</div>
-      <textarea
-        id="cookieInput"
-        class="cookie-input"
-        placeholder="adT=...; LSize=...; lesInS=...; ..."
-        spellcheck="false"
-      ></textarea>
-
-      <div class="field-label" style="margin-top:12px;margin-bottom:6px">Ultimate Guitar Cookies</div>
-      <textarea
-        id="ugCookieInput"
-        class="cookie-input"
-        placeholder="cf_clearance=...; _ga=...; ..."
-        spellcheck="false"
-      ></textarea>
-
-      <div class="cookie-actions">
-        <button class="btn-sm" onclick="saveCookies()">Save Both</button>
-        <button class="btn-sm" onclick="clearCookies()">Clear All</button>
-        <span class="cookie-saved" id="cookieSavedMsg"></span>
       </div>
     </div>
 
@@ -752,42 +722,6 @@ function setCapo(n) {
   if (song) renderSheet();
 }
 
-// ── Cookies ────────────────────────────────────────────────────────────
-function isUGUrl(url) { return /ultimate-guitar\.com/i.test(url); }
-
-function getCookies(url) {
-  const key = isUGUrl(url) ? 'ug_cookies' : 'tab4u_cookies';
-  return localStorage.getItem(key) || '';
-}
-
-function saveCookies() {
-  const tab4u = document.getElementById('cookieInput').value.trim();
-  const ug    = document.getElementById('ugCookieInput').value.trim();
-  if (tab4u) localStorage.setItem('tab4u_cookies', tab4u);
-  if (ug)    localStorage.setItem('ug_cookies', ug);
-  const badge = document.getElementById('cookieSavedBadge');
-  badge.style.display = (tab4u || ug) ? '' : 'none';
-  const msg = document.getElementById('cookieSavedMsg');
-  msg.textContent = '✓ Saved!';
-  msg.classList.add('show');
-  setTimeout(() => msg.classList.remove('show'), 2500);
-}
-
-function clearCookies() {
-  localStorage.removeItem('tab4u_cookies');
-  localStorage.removeItem('ug_cookies');
-  document.getElementById('cookieInput').value = '';
-  document.getElementById('ugCookieInput').value = '';
-  document.getElementById('cookieSavedBadge').style.display = 'none';
-}
-
-function toggleAdv() {
-  const t = document.getElementById('advToggle');
-  const p = document.getElementById('advPanel');
-  t.classList.toggle('open');
-  p.classList.toggle('open');
-}
-
 // ── Fetch ──────────────────────────────────────────────────────────────
 async function fetchSong() {
   const url = document.getElementById('urlInput').value.trim();
@@ -801,9 +735,7 @@ async function fetchSong() {
   document.getElementById('songCard').classList.remove('show');
 
   try {
-    const cookies = getCookies(url);
-    const qs = '/api/song?url=' + encodeURIComponent(url) +
-               (cookies ? '&cookies=' + encodeURIComponent(cookies) : '');
+    const qs = '/api/song?url=' + encodeURIComponent(url);
     const res = await fetch(qs);
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Something went wrong');
@@ -976,14 +908,25 @@ async function deleteSong(e, url) {
   renderLibrary();
 }
 
+// ── Auth ───────────────────────────────────────────────────────────────
+async function signOut() {
+  await fetch('/api/auth/logout', { method: 'POST' });
+  window.location.replace('/login.html');
+}
+
 // ── Init ───────────────────────────────────────────────────────────────
 buildNeck();
-loadLibrary();
-const _saved   = localStorage.getItem('tab4u_cookies') || '';
-const _savedUG = localStorage.getItem('ug_cookies') || '';
-if (_saved)   document.getElementById('cookieInput').value = _saved;
-if (_savedUG) document.getElementById('ugCookieInput').value = _savedUG;
-if (_saved || _savedUG) document.getElementById('cookieSavedBadge').style.display = '';
+
+// Check auth
+fetch('/api/auth/me').then(r => {
+  if (!r.ok) { window.location.replace('/login.html'); return; }
+  return r.json();
+}).then(user => {
+  if (!user) return;
+  if (user.isAdmin) document.getElementById('adminLink').style.display = '';
+  document.getElementById('signOutBtn').style.display = '';
+  loadLibrary();
+});
 </script>
 </body>
 </html>
