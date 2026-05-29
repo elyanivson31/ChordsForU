@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "Fetch Tab4U chord sheets and transpose for your capo position",
   "main": "server.js",
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js"
