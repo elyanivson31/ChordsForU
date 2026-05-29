@@ -1,2 +1,2 @@
 [phases.setup]
-nixPkgs = ["nodejs_20", "python3", "pkg-config", "nodePackages.node-gyp"]
+nixPkgs = ["nodejs_20", "python3", "gcc", "gnumake", "pkg-config"]
