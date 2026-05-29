@@ -2,3 +2,4 @@ node_modules/
 songs.json
 *.log
 data/
+.claude/
