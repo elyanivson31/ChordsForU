@@ -58,6 +58,9 @@ function requireAdmin(req, res, next) {
   next();
 }
 
+// ─── Health check ─────────────────────────────────────────────────────────
+app.get('/health', (_req, res) => res.json({ ok: true }));
+
 // ─── Auth routes ──────────────────────────────────────────────────────────
 app.post('/api/auth/login', (req, res) => {
   const { username, password } = req.body || {};
