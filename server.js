@@ -237,7 +237,7 @@ async function fetchUGWithPuppeteer(targetUrl, cookies = '') {
 
     if (cookies) {
       const hostname = new URL(targetUrl).hostname;
-      const parsed = cookies.split(';').map(c => {
+      const parsed = sanitizeCookies(cookies).split(';').map(c => {
         const [name, ...rest] = c.trim().split('=');
         return { name: name.trim(), value: rest.join('=').trim(), domain: hostname };
       }).filter(c => c.name);
@@ -260,6 +260,15 @@ async function fetchUGWithPuppeteer(targetUrl, cookies = '') {
 }
 
 // ─── HTTP fetch ───────────────────────────────────────────────────────────
+// Strip cookie pairs that contain non-ASCII characters (e.g. Hebrew ad/campaign values)
+function sanitizeCookies(cookies) {
+  if (!cookies) return '';
+  return cookies.split(';')
+    .filter(pair => /^[\x00-\x7F]*$/.test(pair))
+    .join(';')
+    .trim();
+}
+
 function fetchUrl(targetUrl, cookies = '', redirected = false) {
   return new Promise((resolve, reject) => {
     let parsed;
@@ -272,7 +281,7 @@ function fetchUrl(targetUrl, cookies = '', redirected = false) {
       'accept-language': 'en-US,en;q=0.9,he;q=0.8',
       'cache-control': 'no-cache',
     };
-    if (cookies) headers['cookie'] = cookies;
+    if (cookies) headers['cookie'] = sanitizeCookies(cookies);
 
     const options = { hostname: parsed.hostname, path: parsed.pathname + parsed.search, headers };
 
