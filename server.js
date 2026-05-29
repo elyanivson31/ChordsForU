@@ -25,17 +25,15 @@ const app = express();
 const PORT = process.env.PORT || 3334;
 
 // ─── Default admin setup ─────────────────────────────────────────────────
-function initDefaultAdmin() {
-  if (db.countAdmins() > 0) return;
+async function initDefaultAdmin() {
+  if (await db.countAdmins() > 0) return;
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
   let password = '';
   for (let i = 0; i < 10; i++) password += chars[Math.floor(Math.random() * chars.length)];
   const passwordHash = bcrypt.hashSync(password, 10);
-  db.createUser(uuidv4(), 'admin', passwordHash, true);
+  await db.createUser(uuidv4(), 'admin', passwordHash, true);
   return password;
 }
-
-const newAdminPassword = initDefaultAdmin();
 
 // ─── Middleware ───────────────────────────────────────────────────────────
 app.use(express.json());
@@ -62,152 +60,176 @@ function requireAdmin(req, res, next) {
 app.get('/health', (_req, res) => res.json({ ok: true }));
 
 // ─── Auth routes ──────────────────────────────────────────────────────────
-app.post('/api/auth/login', (req, res) => {
-  const { username, password } = req.body || {};
-  if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
-  const user = db.getUser(username);
-  if (!user || !bcrypt.compareSync(password, user.password_hash))
-    return res.status(401).json({ error: 'Invalid username or password' });
-  req.session.userId  = user.id;
-  req.session.isAdmin = !!user.is_admin;
-  res.json({ id: user.id, username: user.username, isAdmin: !!user.is_admin });
+app.post('/api/auth/login', async (req, res) => {
+  try {
+    const { username, password } = req.body || {};
+    if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
+    const user = await db.getUser(username);
+    if (!user || !bcrypt.compareSync(password, user.password_hash))
+      return res.status(401).json({ error: 'Invalid username or password' });
+    req.session.userId  = user.id;
+    req.session.isAdmin = !!user.is_admin;
+    res.json({ id: user.id, username: user.username, isAdmin: !!user.is_admin });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.post('/api/auth/logout', (req, res) => {
   req.session.destroy(() => res.json({ ok: true }));
 });
 
-app.get('/api/auth/me', (req, res) => {
-  if (!req.session.userId) return res.status(401).json({ error: 'Not authenticated' });
-  const user = db.getUserById(req.session.userId);
-  if (!user) return res.status(401).json({ error: 'User not found' });
-  res.json({ id: user.id, username: user.username, isAdmin: !!user.is_admin });
+app.get('/api/auth/me', async (req, res) => {
+  try {
+    if (!req.session.userId) return res.status(401).json({ error: 'Not authenticated' });
+    const user = await db.getUserById(req.session.userId);
+    if (!user) return res.status(401).json({ error: 'User not found' });
+    res.json({ id: user.id, username: user.username, isAdmin: !!user.is_admin });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 // ─── Song routes ──────────────────────────────────────────────────────────
-app.get('/api/songs', requireAuth, (req, res) => {
-  res.json(db.getUserSongs(req.session.userId));
+app.get('/api/songs', requireAuth, async (req, res) => {
+  try {
+    res.json(await db.getUserSongs(req.session.userId));
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.get('/api/song', requireAuth, (req, res) => {
-  const rawUrl = req.query.url;
-  if (!rawUrl) return res.status(400).json({ error: 'URL parameter is required' });
+app.get('/api/song', requireAuth, async (req, res) => {
+  try {
+    const rawUrl = req.query.url;
+    if (!rawUrl) return res.status(400).json({ error: 'URL parameter is required' });
 
-  const key = normalizeUrl(rawUrl);
-  const cached = db.getSong(req.session.userId, key);
-  if (cached) return res.json(cached);
+    const key = normalizeUrl(rawUrl);
+    const cached = await db.getSong(req.session.userId, key);
+    if (cached) return res.json(cached);
 
-  const tab4uCookies = db.getSetting('tab4u_cookies');
-  const ugCookies    = db.getSetting('ug_cookies');
-  const cookies = isUGUrl(rawUrl) ? (ugCookies || '') : (tab4uCookies || '');
+    const tab4uCookies = await db.getSetting('tab4u_cookies');
+    const ugCookies    = await db.getSetting('ug_cookies');
+    const cookies = isUGUrl(rawUrl) ? (ugCookies || '') : (tab4uCookies || '');
 
-  const fetcher = isUGUrl(rawUrl)
-    ? fetchUGWithPuppeteer(rawUrl, cookies)
-    : fetchUrl(rawUrl, cookies);
+    const fetcher = isUGUrl(rawUrl)
+      ? fetchUGWithPuppeteer(rawUrl, cookies)
+      : fetchUrl(rawUrl, cookies);
 
-  fetcher
-    .then(result => {
-      const song = isUGUrl(rawUrl) ? parseUGData(result.data) : parseSong(result);
-      const songObj = { ...song, url: key, savedAt: new Date().toISOString() };
-      db.saveSong(req.session.userId, key, songObj);
-      res.json(songObj);
-    })
-    .catch(err => res.status(500).json({ error: err.message }));
+    fetcher
+      .then(async result => {
+        const song = isUGUrl(rawUrl) ? parseUGData(result.data) : parseSong(result);
+        const songObj = { ...song, url: key, savedAt: new Date().toISOString() };
+        await db.saveSong(req.session.userId, key, songObj);
+        res.json(songObj);
+      })
+      .catch(err => res.status(500).json({ error: err.message }));
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.delete('/api/songs', requireAuth, (req, res) => {
-  const key = normalizeUrl(req.query.url);
-  db.deleteSong(req.session.userId, key);
-  res.json({ ok: true });
+app.delete('/api/songs', requireAuth, async (req, res) => {
+  try {
+    const key = normalizeUrl(req.query.url);
+    await db.deleteSong(req.session.userId, key);
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 // ─── Debug route ──────────────────────────────────────────────────────────
-app.get('/api/debug', requireAuth, (req, res) => {
-  const rawUrl  = req.query.url;
-  if (!rawUrl) return res.status(400).json({ error: 'url required' });
-  const tab4uCookies = db.getSetting('tab4u_cookies');
-  const ugCookies    = db.getSetting('ug_cookies');
-  const cookies = isUGUrl(rawUrl) ? (ugCookies || '') : (tab4uCookies || '');
-  const fetcher = isUGUrl(rawUrl) ? fetchUGWithPuppeteer(rawUrl, cookies) : fetchUrl(rawUrl, cookies);
-  fetcher
-    .then(result => {
-      if (isUGUrl(rawUrl)) {
-        const d = result.data;
-        return res.json({
-          gotData: !!d,
-          topLevelKeys: d ? Object.keys(d) : null,
-          pageKeys: d?.page ? Object.keys(d.page) : null,
-          pageDataKeys: d?.page?.data ? Object.keys(d.page.data) : null,
-          tabViewKeys: d?.page?.data?.tab_view ? Object.keys(d.page.data.tab_view) : null,
-          contentSnippet: d?.page?.data?.tab_view?.wiki_tab?.content?.substring(0, 400) || null,
-          tabInfo: d?.page?.data?.tab ? { title: d.page.data.tab.song_name, artist: d.page.data.tab.artist_name } : null,
-        });
-      }
-      const html = result;
-      res.json({ length: html.length, preview: html.substring(0, 400) });
-    })
-    .catch(err => res.status(500).json({ error: err.message }));
+app.get('/api/debug', requireAuth, async (req, res) => {
+  try {
+    const rawUrl  = req.query.url;
+    if (!rawUrl) return res.status(400).json({ error: 'url required' });
+    const tab4uCookies = await db.getSetting('tab4u_cookies');
+    const ugCookies    = await db.getSetting('ug_cookies');
+    const cookies = isUGUrl(rawUrl) ? (ugCookies || '') : (tab4uCookies || '');
+    const fetcher = isUGUrl(rawUrl) ? fetchUGWithPuppeteer(rawUrl, cookies) : fetchUrl(rawUrl, cookies);
+    fetcher
+      .then(result => {
+        if (isUGUrl(rawUrl)) {
+          const d = result.data;
+          return res.json({
+            gotData: !!d,
+            topLevelKeys: d ? Object.keys(d) : null,
+            pageKeys: d?.page ? Object.keys(d.page) : null,
+            pageDataKeys: d?.page?.data ? Object.keys(d.page.data) : null,
+            tabViewKeys: d?.page?.data?.tab_view ? Object.keys(d.page.data.tab_view) : null,
+            contentSnippet: d?.page?.data?.tab_view?.wiki_tab?.content?.substring(0, 400) || null,
+            tabInfo: d?.page?.data?.tab ? { title: d.page.data.tab.song_name, artist: d.page.data.tab.artist_name } : null,
+          });
+        }
+        const html = result;
+        res.json({ length: html.length, preview: html.substring(0, 400) });
+      })
+      .catch(err => res.status(500).json({ error: err.message }));
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 // ─── Admin routes ─────────────────────────────────────────────────────────
-app.get('/api/admin/users', requireAdmin, (req, res) => {
-  const users = db.getAllUsers().map(u => ({
-    id: u.id,
-    username: u.username,
-    isAdmin: !!u.is_admin,
-    createdAt: u.created_at,
-  }));
-  res.json(users);
+app.get('/api/admin/users', requireAdmin, async (req, res) => {
+  try {
+    const users = (await db.getAllUsers()).map(u => ({
+      id: u.id,
+      username: u.username,
+      isAdmin: !!u.is_admin,
+      createdAt: u.created_at,
+    }));
+    res.json(users);
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.post('/api/admin/users', requireAdmin, (req, res) => {
-  const { username, password, isAdmin } = req.body || {};
-  if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
-  if (password.length < 4) return res.status(400).json({ error: 'Password must be at least 4 characters' });
-  if (db.getUser(username)) return res.status(400).json({ error: 'Username already exists' });
-  const passwordHash = bcrypt.hashSync(password, 10);
-  const id = uuidv4();
-  db.createUser(id, username, passwordHash, !!isAdmin);
-  const user = db.getUserById(id);
-  res.json({ id: user.id, username: user.username, isAdmin: !!user.is_admin, createdAt: user.created_at });
+app.post('/api/admin/users', requireAdmin, async (req, res) => {
+  try {
+    const { username, password, isAdmin } = req.body || {};
+    if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
+    if (password.length < 4) return res.status(400).json({ error: 'Password must be at least 4 characters' });
+    if (await db.getUser(username)) return res.status(400).json({ error: 'Username already exists' });
+    const passwordHash = bcrypt.hashSync(password, 10);
+    const id = uuidv4();
+    await db.createUser(id, username, passwordHash, !!isAdmin);
+    const user = await db.getUserById(id);
+    res.json({ id: user.id, username: user.username, isAdmin: !!user.is_admin, createdAt: user.created_at });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.delete('/api/admin/users/:id', requireAdmin, (req, res) => {
-  const { id } = req.params;
-  if (id === req.session.userId) return res.status(400).json({ error: 'Cannot delete yourself' });
-  const target = db.getUserById(id);
-  if (!target) return res.status(404).json({ error: 'User not found' });
-  if (target.is_admin && db.countAdmins() <= 1)
-    return res.status(400).json({ error: 'Cannot delete the only admin' });
-  db.deleteUser(id);
-  res.json({ ok: true });
+app.delete('/api/admin/users/:id', requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (id === req.session.userId) return res.status(400).json({ error: 'Cannot delete yourself' });
+    const target = await db.getUserById(id);
+    if (!target) return res.status(404).json({ error: 'User not found' });
+    if (target.is_admin && await db.countAdmins() <= 1)
+      return res.status(400).json({ error: 'Cannot delete the only admin' });
+    await db.deleteUser(id);
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.put('/api/admin/users/:id/password', requireAdmin, (req, res) => {
-  const { id } = req.params;
-  const { password } = req.body || {};
-  if (!password || password.length < 4) return res.status(400).json({ error: 'Password must be at least 4 characters' });
-  const user = db.getUserById(id);
-  if (!user) return res.status(404).json({ error: 'User not found' });
-  db.updatePassword(id, bcrypt.hashSync(password, 10));
-  res.json({ ok: true });
+app.put('/api/admin/users/:id/password', requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { password } = req.body || {};
+    if (!password || password.length < 4) return res.status(400).json({ error: 'Password must be at least 4 characters' });
+    const user = await db.getUserById(id);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    await db.updatePassword(id, bcrypt.hashSync(password, 10));
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.get('/api/admin/settings', requireAdmin, (req, res) => {
-  res.json({
-    tab4uCookies: db.getSetting('tab4u_cookies'),
-    ugCookies:    db.getSetting('ug_cookies'),
-  });
+app.get('/api/admin/settings', requireAdmin, async (req, res) => {
+  try {
+    res.json({
+      tab4uCookies: await db.getSetting('tab4u_cookies'),
+      ugCookies:    await db.getSetting('ug_cookies'),
+    });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.put('/api/admin/settings', requireAdmin, (req, res) => {
-  const { tab4uCookies, ugCookies } = req.body || {};
-  if (tab4uCookies !== undefined) db.setSetting('tab4u_cookies', tab4uCookies);
-  if (ugCookies    !== undefined) db.setSetting('ug_cookies',    ugCookies);
-  res.json({
-    tab4uCookies: db.getSetting('tab4u_cookies'),
-    ugCookies:    db.getSetting('ug_cookies'),
-  });
+app.put('/api/admin/settings', requireAdmin, async (req, res) => {
+  try {
+    const { tab4uCookies, ugCookies } = req.body || {};
+    if (tab4uCookies !== undefined) await db.setSetting('tab4u_cookies', tab4uCookies);
+    if (ugCookies    !== undefined) await db.setSetting('ug_cookies',    ugCookies);
+    res.json({
+      tab4uCookies: await db.getSetting('tab4u_cookies'),
+      ugCookies:    await db.getSetting('ug_cookies'),
+    });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 // ─── Utility ──────────────────────────────────────────────────────────────
@@ -445,11 +467,21 @@ function parseUGData(store) {
   return { title, artist, isHebrew, sections, originalCapo };
 }
 
-app.listen(PORT, () => {
-  console.log(`\n  🎸 ChordCapo → http://localhost:${PORT}`);
-  console.log(`  💾 Database: ${db.DB_PATH}`);
-  if (newAdminPassword) {
-    console.log(`  👤 Admin password: ${newAdminPassword}  ← save this, it won't be shown again`);
-  }
-  console.log('');
+// ─── Startup ──────────────────────────────────────────────────────────────
+async function main() {
+  await db.initDb();
+  const newAdminPassword = await initDefaultAdmin();
+  app.listen(PORT, () => {
+    console.log(`\n  ChordCapo -> http://localhost:${PORT}`);
+    console.log(`  Database: PostgreSQL`);
+    if (newAdminPassword) {
+      console.log(`  Admin password: ${newAdminPassword}  <- save this, it won't be shown again`);
+    }
+    console.log('');
+  });
+}
+
+main().catch(err => {
+  console.error('Failed to start server:', err);
+  process.exit(1);
 });

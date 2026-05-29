@@ -1,84 +1,90 @@
-const path = require('path');
-const fs   = require('fs');
-const Database = require('better-sqlite3');
+const { Pool } = require('pg');
 
-const DATA_DIR = path.dirname(process.env.DB_PATH || path.join(__dirname, 'data', 'chordcapo.db'));
-fs.mkdirSync(DATA_DIR, { recursive: true });
+if (!process.env.DATABASE_URL) {
+  throw new Error('DATABASE_URL environment variable is required');
+}
 
-const DB_PATH = process.env.DB_PATH || path.join(__dirname, 'data', 'chordcapo.db');
-const db = new Database(DB_PATH);
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+});
 
-// Enable WAL for better concurrency
-db.pragma('journal_mode = WAL');
-db.pragma('foreign_keys = ON');
+async function initDb() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS users (
+      id TEXT PRIMARY KEY,
+      username TEXT UNIQUE NOT NULL,
+      password_hash TEXT NOT NULL,
+      is_admin INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL
+    );
 
-db.exec(`
-  CREATE TABLE IF NOT EXISTS users (
-    id TEXT PRIMARY KEY,
-    username TEXT UNIQUE NOT NULL,
-    password_hash TEXT NOT NULL,
-    is_admin INTEGER NOT NULL DEFAULT 0,
-    created_at TEXT NOT NULL
-  );
+    CREATE TABLE IF NOT EXISTS songs (
+      user_id TEXT NOT NULL,
+      url TEXT NOT NULL,
+      title TEXT,
+      artist TEXT,
+      is_hebrew INTEGER DEFAULT 0,
+      saved_at TEXT,
+      data TEXT NOT NULL,
+      PRIMARY KEY (user_id, url),
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
 
-  CREATE TABLE IF NOT EXISTS songs (
-    user_id TEXT NOT NULL,
-    url TEXT NOT NULL,
-    title TEXT,
-    artist TEXT,
-    is_hebrew INTEGER DEFAULT 0,
-    saved_at TEXT,
-    data TEXT NOT NULL,
-    PRIMARY KEY (user_id, url),
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-  );
+    CREATE TABLE IF NOT EXISTS settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL DEFAULT ''
+    );
+  `);
 
-  CREATE TABLE IF NOT EXISTS settings (
-    key TEXT PRIMARY KEY,
-    value TEXT NOT NULL DEFAULT ''
-  );
-`);
-
-// Insert default settings rows if missing
-const insertSetting = db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES (?, '')`);
-insertSetting.run('tab4u_cookies');
-insertSetting.run('ug_cookies');
+  // Insert default settings rows if missing
+  await pool.query(`INSERT INTO settings (key, value) VALUES ('tab4u_cookies', '') ON CONFLICT (key) DO NOTHING`);
+  await pool.query(`INSERT INTO settings (key, value) VALUES ('ug_cookies', '') ON CONFLICT (key) DO NOTHING`);
+}
 
 // ─── Users ────────────────────────────────────────────────────────────────
-function getUser(username) {
-  return db.prepare('SELECT * FROM users WHERE username = ?').get(username);
+async function getUser(username) {
+  const { rows } = await pool.query('SELECT * FROM users WHERE username = $1', [username]);
+  return rows[0] || null;
 }
 
-function getUserById(id) {
-  return db.prepare('SELECT * FROM users WHERE id = ?').get(id);
+async function getUserById(id) {
+  const { rows } = await pool.query('SELECT * FROM users WHERE id = $1', [id]);
+  return rows[0] || null;
 }
 
-function getAllUsers() {
-  return db.prepare('SELECT id, username, is_admin, created_at FROM users').all();
+async function getAllUsers() {
+  const { rows } = await pool.query('SELECT id, username, is_admin, created_at FROM users');
+  return rows;
 }
 
-function createUser(id, username, passwordHash, isAdmin) {
-  db.prepare('INSERT INTO users (id, username, password_hash, is_admin, created_at) VALUES (?, ?, ?, ?, ?)')
-    .run(id, username, passwordHash, isAdmin ? 1 : 0, new Date().toISOString());
+async function createUser(id, username, passwordHash, isAdmin) {
+  await pool.query(
+    'INSERT INTO users (id, username, password_hash, is_admin, created_at) VALUES ($1, $2, $3, $4, $5)',
+    [id, username, passwordHash, isAdmin ? 1 : 0, new Date().toISOString()]
+  );
 }
 
-function deleteUser(id) {
-  db.prepare('DELETE FROM users WHERE id = ?').run(id);
+async function deleteUser(id) {
+  await pool.query('DELETE FROM users WHERE id = $1', [id]);
 }
 
-function updatePassword(id, passwordHash) {
-  db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(passwordHash, id);
+async function updatePassword(id, passwordHash) {
+  await pool.query('UPDATE users SET password_hash = $1 WHERE id = $2', [passwordHash, id]);
 }
 
-function countAdmins() {
-  return db.prepare('SELECT COUNT(*) as cnt FROM users WHERE is_admin = 1').get().cnt;
+async function countAdmins() {
+  const { rows } = await pool.query('SELECT COUNT(*) AS cnt FROM users WHERE is_admin = 1');
+  return parseInt(rows[0].cnt, 10);
 }
 
 // ─── Songs ────────────────────────────────────────────────────────────────
-function getUserSongs(userId) {
-  return db.prepare(
-    'SELECT url, title, artist, is_hebrew, saved_at FROM songs WHERE user_id = ? ORDER BY saved_at DESC'
-  ).all(userId).map(r => ({
+async function getUserSongs(userId) {
+  const { rows } = await pool.query(
+    'SELECT url, title, artist, is_hebrew, saved_at FROM songs WHERE user_id = $1 ORDER BY saved_at DESC',
+    [userId]
+  );
+  return rows.map(r => ({
     url: r.url,
     title: r.title,
     artist: r.artist,
@@ -87,49 +93,52 @@ function getUserSongs(userId) {
   }));
 }
 
-function getSong(userId, url) {
-  const row = db.prepare('SELECT data FROM songs WHERE user_id = ? AND url = ?').get(userId, url);
-  if (!row) return undefined;
-  try { return JSON.parse(row.data); } catch { return undefined; }
+async function getSong(userId, url) {
+  const { rows } = await pool.query('SELECT data FROM songs WHERE user_id = $1 AND url = $2', [userId, url]);
+  if (!rows[0]) return null;
+  try { return JSON.parse(rows[0].data); } catch { return null; }
 }
 
-function saveSong(userId, url, songObj) {
-  db.prepare(`
+async function saveSong(userId, url, songObj) {
+  await pool.query(`
     INSERT INTO songs (user_id, url, title, artist, is_hebrew, saved_at, data)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(user_id, url) DO UPDATE SET
-      title    = excluded.title,
-      artist   = excluded.artist,
-      is_hebrew = excluded.is_hebrew,
-      saved_at = excluded.saved_at,
-      data     = excluded.data
-  `).run(
+    VALUES ($1, $2, $3, $4, $5, $6, $7)
+    ON CONFLICT (user_id, url) DO UPDATE SET
+      title     = EXCLUDED.title,
+      artist    = EXCLUDED.artist,
+      is_hebrew = EXCLUDED.is_hebrew,
+      saved_at  = EXCLUDED.saved_at,
+      data      = EXCLUDED.data
+  `, [
     userId,
     url,
     songObj.title || null,
     songObj.artist || null,
     songObj.isHebrew ? 1 : 0,
     songObj.savedAt || new Date().toISOString(),
-    JSON.stringify(songObj)
-  );
+    JSON.stringify(songObj),
+  ]);
 }
 
-function deleteSong(userId, url) {
-  db.prepare('DELETE FROM songs WHERE user_id = ? AND url = ?').run(userId, url);
+async function deleteSong(userId, url) {
+  await pool.query('DELETE FROM songs WHERE user_id = $1 AND url = $2', [userId, url]);
 }
 
 // ─── Settings ─────────────────────────────────────────────────────────────
-function getSetting(key) {
-  const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key);
-  return row ? row.value : '';
+async function getSetting(key) {
+  const { rows } = await pool.query('SELECT value FROM settings WHERE key = $1', [key]);
+  return rows[0] ? rows[0].value : '';
 }
 
-function setSetting(key, value) {
-  db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(key, value);
+async function setSetting(key, value) {
+  await pool.query(
+    'INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value',
+    [key, value]
+  );
 }
 
 module.exports = {
-  DB_PATH,
+  initDb,
   getUser,
   getUserById,
   getAllUsers,
